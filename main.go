@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,14 +12,71 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// 英数字を含むかどうかのバリデーションチェックのための関数
+func containsAlphaAndNumber(s string) bool {
+	hasAlpha := false
+	hasDigit := false
+
+	for _, r := range s {
+		switch {
+		case 'A' <= r && r <= 'Z':
+			hasAlpha = true
+		case 'a' <= r && r <= 'z':
+			hasAlpha = true
+		case '0' <= r && r <= '9':
+			hasDigit = true
+		}
+		if hasAlpha && hasDigit {
+			return true
+		}
+	}
+	return false
+}
+
 // POST usersハンドラー関数の設定
 func createUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost { //ここ必要ないか？Routerへの登録でメソッドも明示しているし
-		//後で機能を実装
-		log.Println("/usersへのアクセス確認が完了しました")
-	} else {
-		http.Error(w, "許可されていないメソッドです", http.StatusMethodNotAllowed)
+	//jsonで受けとったリクエスト情報をGoで扱えるようにDecodeする
+	type user struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
 	}
+
+	params := user{}
+	err := json.NewDecoder(r.Body).Decode(&params)
+	if err != nil {
+		log.Printf("Failed to Decode Request Body %v", err)
+		http.Error(w, "不正なリクエストです", http.StatusBadRequest)
+		return
+	}
+	//バリデーションチェックの実装
+	//usernameのバリデーションチェック
+	if params.Username == "" {
+		http.Error(w, "usernameは必須項目です", http.StatusBadRequest)
+		return
+	}
+
+	if len(params.Username) < 5 || len(params.Username) > 15 {
+		http.Error(w, "usernameは5桁以上15桁以下で設定する必要があります", http.StatusBadRequest)
+		return
+	}
+
+	//passwordのバリデーションチェック
+	if params.Password == "" {
+		http.Error(w, "passwordは必須項目です", http.StatusBadRequest)
+		return
+	}
+
+	if len(params.Password) < 8 || len(params.Password) > 64 {
+		http.Error(w, "passwordは8桁以上64桁以下で設定する必要があります", http.StatusBadRequest)
+		return
+	}
+
+	if containsAlphaAndNumber(params.Password) == false {
+		http.Error(w, "passwordは英数字を両方含む必要があります", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("usernameは%sで、passwordは%sです", params.Username, "隠ぺい")
 }
 
 func main() {
