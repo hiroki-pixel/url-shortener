@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -45,38 +46,61 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&params)
 	if err != nil {
 		log.Printf("Failed to Decode Request Body %v", err)
-		http.Error(w, "不正なリクエストです", http.StatusBadRequest)
+		http.Error(w, "不正なリクエストです\n", http.StatusBadRequest)
 		return
 	}
 	//バリデーションチェックの実装
 	//usernameのバリデーションチェック
 	if params.Username == "" {
-		http.Error(w, "usernameは必須項目です", http.StatusBadRequest)
+		http.Error(w, "usernameは必須項目です\n", http.StatusBadRequest)
 		return
 	}
 
 	if len(params.Username) < 5 || len(params.Username) > 15 {
-		http.Error(w, "usernameは5桁以上15桁以下で設定する必要があります", http.StatusBadRequest)
+		http.Error(w, "usernameは5桁以上15桁以下で設定する必要があります\n", http.StatusBadRequest)
 		return
 	}
 
 	//passwordのバリデーションチェック
 	if params.Password == "" {
-		http.Error(w, "passwordは必須項目です", http.StatusBadRequest)
+		http.Error(w, "passwordは必須項目です\n", http.StatusBadRequest)
 		return
 	}
 
 	if len(params.Password) < 8 || len(params.Password) > 64 {
-		http.Error(w, "passwordは8桁以上64桁以下で設定する必要があります", http.StatusBadRequest)
+		http.Error(w, "passwordは8桁以上64桁以下で設定する必要があります\n", http.StatusBadRequest)
 		return
 	}
 
 	if containsAlphaAndNumber(params.Password) == false {
-		http.Error(w, "passwordは英数字を両方含む必要があります", http.StatusBadRequest)
+		http.Error(w, "passwordは英数字を両方含む必要があります\n", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("usernameは%sで、passwordは%sです", params.Username, "隠ぺい")
+	log.Printf("usernameは%sで、passwordは%sです\n", params.Username, "隠ぺい")
+
+	//後で書く：処理として、パスワードをハッシュ化する。user_idを払い出す
+	//後で書く：リクエスト内容と処理結果をDBに格納する
+
+	//レスポンス情報を作る
+	type resuser struct {
+		UserID    string `json:"user_id"`
+		Username  string `json:"username"`
+		CreatedAt string `json:"created_at"`
+	}
+	resparams := resuser{}
+
+	//user_idやcreated_atの払出がまだなのでサンプルを入れる
+	resparams.UserID = uuid.NewString()
+	resparams.CreatedAt = "2026-09-09T12:00:00+09:00"
+	resparams.Username = params.Username
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	err = json.NewEncoder(w).Encode(resparams)
+	if err != nil {
+		log.Printf("Failed to Encode Response %v\n", err)
+	}
 }
 
 func main() {
