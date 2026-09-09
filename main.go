@@ -37,7 +37,7 @@ func containsAlphaAndNumber(s string) bool {
 }
 
 // POST usersハンドラー関数の設定
-func createUser(w http.ResponseWriter, r *http.Request) {
+func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	//jsonで受けとったリクエスト情報をGoで扱えるようにDecodeする
 	type user struct {
 		Username string `json:"username"`
@@ -89,6 +89,8 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "パスワードの保存に失敗しました", http.StatusInternalServerError)
 		return
 	}
+
+	string(passwordHash)
 
 	//後で書く：リクエスト内容と処理結果をDBに格納する
 
@@ -147,7 +149,11 @@ func main() {
 	mux := http.NewServeMux()
 
 	//作成したRouter(mux)にhandlerを登録する
-	mux.HandleFunc("POST /users", createUser)
+	//mux.HandleFunc("POST /users", createUser)
+
+	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
+		createUser(w, r, db)
+	})
 
 	//設定したアドレスとRouterを使用してサーバを起動
 	addr := ":" + port
