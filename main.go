@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -79,7 +81,15 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("usernameは%sで、passwordは%sです\n", params.Username, "隠ぺい")
 
-	//後で書く：処理として、パスワードをハッシュ化する。user_idを払い出す
+	//後で書く：処理として、user_idを払い出す。また、パスワードをハッシュ化する。
+	userID := uuid.NewString()
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(params.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Println("Failed to Create HashPassword")
+		http.Error(w, "パスワードの保存に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
 	//後で書く：リクエスト内容と処理結果をDBに格納する
 
 	//レスポンス情報を作る
@@ -90,8 +100,8 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	resparams := resuser{}
 
-	//user_idやcreated_atの払出がまだなのでサンプルを入れる
-	resparams.UserID = uuid.NewString()
+	//created_atの払出(つまりDB格納)がまだなので仮値をハードコーディング
+	resparams.UserID = userID
 	resparams.CreatedAt = "2026-09-09T12:00:00+09:00"
 	resparams.Username = params.Username
 
