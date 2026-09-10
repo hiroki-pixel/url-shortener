@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 )
 
 // 英数字を含むかどうかのバリデーションチェックのための関数
@@ -84,7 +83,7 @@ func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	log.Printf("usernameは%sで、passwordは%sです\n", params.Username, "隠ぺい")
 
-	//後で書く：処理として、user_idを払い出す。また、パスワードをハッシュ化する。
+	//処理として、user_idを払い出す。また、パスワードをハッシュ化する。
 	userID := uuid.NewString()
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(params.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -142,7 +141,7 @@ func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 	resparams := resuser{}
 
-	//created_atの払出(つまりDB格納)がまだなので仮値をハードコーディング
+	//レスポンス用の構造体のフィールドに、処理で作成した情報やリクエストで得た情報を詰め込む
 	resparams.UserID = userID
 	resparams.CreatedAt = createdAt
 	resparams.Username = params.Username
