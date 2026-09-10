@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/google/uuid"
+	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/joho/godotenv"
 	"github.com/lib/pq"
 )
@@ -39,7 +40,7 @@ func containsAlphaAndNumber(s string) bool {
 }
 
 // POST usersハンドラー関数の設定
-func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func createUser(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
 	//jsonで受けとったリクエスト情報をGoで扱えるようにDecodeする
 	type user struct {
 		Username string `json:"username"`
@@ -84,7 +85,7 @@ func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	log.Printf("usernameは%sで、passwordは%sです\n", params.Username, "隠ぺい")
 
 	//処理として、user_idを払い出す。また、パスワードをハッシュ化する。
-	userID := uuid.NewString()
+	userID := uuid.New()
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(params.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Println("Failed to Create HashPassword")
@@ -95,29 +96,17 @@ func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	//byte配列のハッシュパスワードを文字列に変換しておく
 	passwordHashString := string(passwordHash)
 
-	//リクエスト内容と処理結果をDBに格納する
-	insertUserRow := db.QueryRow(
-		`INSERT INTO users (
-		user_id,
-		username,
-		password_hash
-		)
-	VALUES
-		(
-		$1,
-		$2,
-		$3
-		)
-	RETURNING created_at;`,
-		userID,
-		params.Username,
-		passwordHashString)
+	//sqlcの導入後のDBへの格納処理
+	//sqlcが要求する引数になる構造体の作成
+	userParams := database.CreateUserParams{
+		UserID:       userID,
+		Username:     params.Username,
+		PasswordHash: passwordHashString,
+	}
+	//sqlcで作った、CreateUserメソッドを使う
+	createdAt, err := queries.CreateUser(r.Context(), userParams)
 
-	//RETURNINGで返ってきたcreate_atをGoで扱えるようにする
-	var createdAt time.Time
-	err = insertUserRow.Scan(&createdAt)
-
-	//Scan()でDBから返ってきたerrを、postgresのエラーとして扱える形式の&pqErrに入れなおす
+	// sqlcのCreateUserから返されたDBエラーを判定する
 	var pqErr *pq.Error
 
 	//usernameの重複エラーのエラーハンドリングをする
@@ -135,7 +124,7 @@ func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	//レスポンス情報を作る
 	type resuser struct {
-		UserID    string    `json:"user_id"`
+		UserID    uuid.UUID `json:"user_id"`
 		Username  string    `json:"username"`
 		CreatedAt time.Time `json:"created_at"`
 	}
@@ -184,14 +173,16 @@ func main() {
 	}
 	fmt.Println("DB接続完了")
 
+	//DBとの接続窓口たるdbを使って、sqlcで作成したメソッドを持つqueriesにする。
+	queries := database.New(db)
+
 	//Routerの作成
 	mux := http.NewServeMux()
 
 	//作成したRouter(つまり、mux)にhandlerを登録する
-	//mux.HandleFunc("POST /users", createUser)
 
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
-		createUser(w, r, db)
+		createUser(w, r, queries)
 	})
 
 	//設定したアドレスとRouterを使用してサーバを起動
