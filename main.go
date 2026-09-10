@@ -3,15 +3,18 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -90,21 +93,58 @@ func createUser(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	string(passwordHash)
+	//byte配列のハッシュパスワードを文字列に変換しておく
+	passwordHashString := string(passwordHash)
 
-	//後で書く：リクエスト内容と処理結果をDBに格納する
+	//リクエスト内容と処理結果をDBに格納する
+	insertUserRow := db.QueryRow(
+		`INSERT INTO users (
+		user_id,
+		username,
+		password_hash
+		)
+	VALUES
+		(
+		$1,
+		$2,
+		$3
+		)
+	RETURNING created_at;`,
+		userID,
+		params.Username,
+		passwordHashString)
+
+	//RETURNINGで返ってきたcreate_atをGoで扱えるようにする
+	var createdAt time.Time
+	err = insertUserRow.Scan(&createdAt)
+
+	//Scan()でDBから返ってきたerrを、postgresのエラーとして扱える形式の&pqErrに入れなおす
+	var pqErr *pq.Error
+
+	//usernameの重複エラーのエラーハンドリングをする
+	if errors.As(err, &pqErr) && pqErr.Constraint == "users_username_key" {
+		log.Println("Your username is not Unique. Failed to INSERT UserRow ")
+		http.Error(w, "ユーザ名が既に使用されているためユーザ登録に失敗しました。別のユーザ名を使用してください", http.StatusConflict)
+		return
+	}
+	//その他のINSERT分の中でエラーが発生した場合のエラーハンドリングをする。
+	if err != nil {
+		log.Println("Failed to INSERT UserRow")
+		http.Error(w, "サーバエラーのためユーザ登録に失敗しました。時間をおいて再度試してください。", http.StatusInternalServerError)
+		return
+	}
 
 	//レスポンス情報を作る
 	type resuser struct {
-		UserID    string `json:"user_id"`
-		Username  string `json:"username"`
-		CreatedAt string `json:"created_at"`
+		UserID    string    `json:"user_id"`
+		Username  string    `json:"username"`
+		CreatedAt time.Time `json:"created_at"`
 	}
 	resparams := resuser{}
 
 	//created_atの払出(つまりDB格納)がまだなので仮値をハードコーディング
 	resparams.UserID = userID
-	resparams.CreatedAt = "2026-09-09T12:00:00+09:00"
+	resparams.CreatedAt = createdAt
 	resparams.Username = params.Username
 
 	w.Header().Set("Content-Type", "application/json")
@@ -148,7 +188,7 @@ func main() {
 	//Routerの作成
 	mux := http.NewServeMux()
 
-	//作成したRouter(mux)にhandlerを登録する
+	//作成したRouter(つまり、mux)にhandlerを登録する
 	//mux.HandleFunc("POST /users", createUser)
 
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
