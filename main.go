@@ -40,15 +40,15 @@ func containsAlphaAndNumber(s string) bool {
 }
 
 // POST usersハンドラー関数の設定
-func createUser(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+func handleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
 	//jsonで受けとったリクエスト情報をGoで扱えるようにDecodeする
-	type user struct {
+	type createUserRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 
-	params := user{}
-	err := json.NewDecoder(r.Body).Decode(&params)
+	request := createUserRequest{}
+	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		log.Printf("Failed to Decode Request Body %v", err)
 		http.Error(w, "不正なリクエストです\n", http.StatusBadRequest)
@@ -56,37 +56,37 @@ func createUser(w http.ResponseWriter, r *http.Request, queries *database.Querie
 	}
 	//バリデーションチェックの実装
 	//usernameのバリデーションチェック
-	if params.Username == "" {
+	if request.Username == "" {
 		http.Error(w, "usernameは必須項目です\n", http.StatusBadRequest)
 		return
 	}
 
-	if len(params.Username) < 5 || len(params.Username) > 15 {
+	if len(request.Username) < 5 || len(request.Username) > 15 {
 		http.Error(w, "usernameは5桁以上15桁以下で設定する必要があります\n", http.StatusBadRequest)
 		return
 	}
 
 	//passwordのバリデーションチェック
-	if params.Password == "" {
+	if request.Password == "" {
 		http.Error(w, "passwordは必須項目です\n", http.StatusBadRequest)
 		return
 	}
 
-	if len(params.Password) < 8 || len(params.Password) > 64 {
+	if len(request.Password) < 8 || len(request.Password) > 64 {
 		http.Error(w, "passwordは8桁以上64桁以下で設定する必要があります\n", http.StatusBadRequest)
 		return
 	}
 
-	if containsAlphaAndNumber(params.Password) == false {
+	if containsAlphaAndNumber(request.Password) == false {
 		http.Error(w, "passwordは英数字を両方含む必要があります\n", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("usernameは%sで、passwordは%sです\n", params.Username, "隠ぺい")
+	log.Printf("usernameは%sで、passwordは%sです\n", request.Username, "隠ぺい")
 
 	//処理として、user_idを払い出す。また、パスワードをハッシュ化する。
 	userID := uuid.New()
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(params.Password), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Println("Failed to Create HashPassword")
 		http.Error(w, "パスワードの保存に失敗しました", http.StatusInternalServerError)
@@ -97,16 +97,16 @@ func createUser(w http.ResponseWriter, r *http.Request, queries *database.Querie
 	passwordHashString := string(passwordHash)
 
 	//sqlcの導入後のDBへの格納処理
-	//sqlcが要求する引数になる構造体の作成
-	userParams := database.CreateUserParams{
+	//sqlcが要求する引数になる構造体(InsertUserParams)の作成
+	insertParams := database.InsertUserParams{
 		UserID:       userID,
-		Username:     params.Username,
+		Username:     request.Username,
 		PasswordHash: passwordHashString,
 	}
-	//sqlcで作った、CreateUserメソッドを使う
-	createdAt, err := queries.CreateUser(r.Context(), userParams)
+	//sqlcで作った、InsertUserメソッドを使う
+	createdAt, err := queries.InsertUser(r.Context(), insertParams)
 
-	// sqlcのCreateUserから返されたDBエラーを判定する
+	// sqlcのInsertUserから返されたDBエラーを判定する
 	var pqErr *pq.Error
 
 	//usernameの重複エラーのエラーハンドリングをする
@@ -123,21 +123,21 @@ func createUser(w http.ResponseWriter, r *http.Request, queries *database.Querie
 	}
 
 	//レスポンス情報を作る
-	type resuser struct {
+	type createUserResponse struct {
 		UserID    uuid.UUID `json:"user_id"`
 		Username  string    `json:"username"`
 		CreatedAt time.Time `json:"created_at"`
 	}
-	resparams := resuser{}
+	response := createUserResponse{}
 
 	//レスポンス用の構造体のフィールドに、処理で作成した情報やリクエストで得た情報を詰め込む
-	resparams.UserID = userID
-	resparams.CreatedAt = createdAt
-	resparams.Username = params.Username
+	response.UserID = userID
+	response.CreatedAt = createdAt
+	response.Username = insertParams.Username
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	err = json.NewEncoder(w).Encode(resparams)
+	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
 		log.Printf("Failed to Encode Response %v\n", err)
 	}
@@ -182,7 +182,7 @@ func main() {
 	//作成したRouter(つまり、mux)にhandlerを登録する
 
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
-		createUser(w, r, queries)
+		handleCreateUser(w, r, queries)
 	})
 
 	//設定したアドレスとRouterを使用してサーバを起動
