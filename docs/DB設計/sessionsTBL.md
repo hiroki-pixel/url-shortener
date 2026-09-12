@@ -9,7 +9,7 @@
 
 | No. | 論理名 | 物理名 | データ型 | 桁数 | NULL | PK | FK | UNIQUE | DEFAULT | 制約・チェック | 備考 |
 |---:|---|---|---|---:|---|---|---|---|---|---|---|
-| 1 | セッションID | session_id | TEXT | - | × | ○ | - | - | - | - |  |
+| 1 | セッションID | session_id | TEXT | - | × | ○ | - | - | - | - | crypto.randを使用したランダムな32byte |
 | 2 | ユーザID | user_id | UUID | - | × | - | ○ | - | - | - | セッションがどのユーザーに紐づくかを管理する。users.user_id に存在するユーザーのみ登録可能とする。 |
 | 3 | 作成日時 | created_at | TIMESTAMP | - | × | - | - | - | NOW() | - |  |
 | 4 | 有効期限 | expires_at | TIMESTAMP | - | × | - | - | - | NOW() + INTERVAL '3 hours' | - | 本セッションの有効期限は、作成から3時間後までとする。 |

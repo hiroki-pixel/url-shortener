@@ -2,10 +2,12 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"time"
@@ -50,7 +52,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.
 	request := createUserRequest{}
 	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
-		log.Printf("Failed to Decode Request Body %v", err)
+		log.Printf("Failed to Decode Request Body %v\n", err)
 		http.Error(w, "不正なリクエストです\n", http.StatusBadRequest)
 		return
 	}
@@ -143,6 +145,76 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.
 	}
 }
 
+// POST sessionsハンドラー関数の設定
+func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+	type createSessionRequest struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	//リクエスト内容をGoで扱えるようにする
+	request := createSessionRequest{}
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		log.Printf("Failed to Decode Request Body %v\n", err)
+		http.Error(w, "不正なリクエストです", http.StatusBadRequest)
+		return
+	}
+
+	// POST sessionsでは必須項目の有無のみチェックする
+	//ユーザ存在確認とパスワードの正当性の検証は後続処理で反映
+	if request.Username == "" {
+		log.Println("username is required")
+		http.Error(w, "不正なリクエストです。ユーザネームは必須項目です", http.StatusBadRequest)
+		return
+	}
+
+	if request.Password == "" {
+		log.Println("password is required")
+		http.Error(w, "不正なリクエストです。パスワードは必須項目です", http.StatusBadRequest)
+		return
+	}
+
+	//usersテーブルへのusername検索およびpassword_hashの取得
+	//sqlcで作成したusername検索メソッドの利用
+	getUserInfo, err := queries.GetUserByUsername(r.Context(), request.Username)
+
+	//DBへの検索処理についてerrのハンドリングをする
+	// sqlcのGettUserByUsernameから返されたDBエラーを判定する
+	if errors.Is(err, sql.ErrNoRows) {
+		//リクエストで受けとったusernameが存在しなかった
+		http.Error(w, "無効なユーザ名またはパスワードです", http.StatusUnauthorized)
+		return
+	}
+
+	if err != nil {
+		//その他のエラー
+		http.Error(w, "サーバエラーが発生しました。しばらく時間をおいて再度試してください", http.StatusInternalServerError)
+		return
+	}
+
+	//保存済みhash_passwordとリクエストで受けとったpasswordを照合する
+	err = bcrypt.CompareHashAndPassword([]byte(getUserInfo.PasswordHash), []byte(request.Password))
+	if err != nil {
+		//リクエストで受けとったpasswordが無効なものだった
+		http.Error(w, "無効なユーザ名またはパスワードです", http.StatusUnauthorized)
+		return
+	}
+
+	//session_idの発行処理　明日はここから
+	randomBytes := make([]byte, 32)
+
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		http.Error(w, "セッションIDの払出に失敗しました。再度実施してください", http.StatusInternalServerError)
+	}
+	//[]byte型から文字列に変換する
+	sessionID := base64.RawURLEncoding.EncodeToString(randomBytes)
+
+	//sessionsテーブルへの格納処理
+
+}
+
 func main() {
 
 	//環境変数の取得確認
@@ -180,9 +252,13 @@ func main() {
 	mux := http.NewServeMux()
 
 	//作成したRouter(つまり、mux)にhandlerを登録する
-
+	//Post /usersのルーティング
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
 		handleCreateUser(w, r, queries)
+	})
+	//Post /sessionsのルーティング
+	mux.HandleFunc("POST /sessions", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateSession(w, r, queries)
 	})
 
 	//設定したアドレスとRouterを使用してサーバを起動

@@ -11,3 +11,8 @@ VALUES
 	$3
 	)
 RETURNING created_at;
+
+-- name: GetUserByUsername :one 
+SELECT user_id,password_hash 
+FROM users
+WHERE username = $1;

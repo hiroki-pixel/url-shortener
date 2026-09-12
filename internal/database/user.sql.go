@@ -12,6 +12,24 @@ import (
 	"github.com/google/uuid"
 )
 
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT user_id,password_hash 
+FROM users
+WHERE username = $1
+`
+
+type GetUserByUsernameRow struct {
+	UserID       uuid.UUID
+	PasswordHash string
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByUsername, username)
+	var i GetUserByUsernameRow
+	err := row.Scan(&i.UserID, &i.PasswordHash)
+	return i, err
+}
+
 const insertUser = `-- name: InsertUser :one
 INSERT INTO users (
 	user_id,
