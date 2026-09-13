@@ -201,7 +201,7 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 		return
 	}
 
-	//session_idの発行処理　明日はここから
+	//session_idの発行処理
 	randomBytes := make([]byte, 32)
 
 	_, err := rand.Read(randomBytes)
