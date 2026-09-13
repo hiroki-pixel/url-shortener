@@ -204,7 +204,7 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 	//session_idの発行処理
 	randomBytes := make([]byte, 32)
 
-	_, err := rand.Read(randomBytes)
+	_, err = rand.Read(randomBytes)
 	if err != nil {
 		http.Error(w, "セッションIDの払出に失敗しました。再度実施してください", http.StatusInternalServerError)
 	}
@@ -212,6 +212,18 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 	sessionID := base64.RawURLEncoding.EncodeToString(randomBytes)
 
 	//sessionsテーブルへの格納処理
+	//InsertSessionメソッドが要求する構造体InsertSessionParams型の変数を作成。
+	InsertParams := database.InsertSessionParams{
+		SessionID: sessionID,
+		UserID:    getUserInfo.UserID,
+	}
+
+	//sessionsテーブルへの格納処理実施
+	err = queries.InsertSession(r.Context(), InsertParams)
+	if err != nil {
+		log.Println("DBへのsessionの格納失敗")
+		http.Error(w, "サーバ内エラーです。しばらくしてもう一度試してください", http.StatusInternalServerError)
+	}
 
 }
 

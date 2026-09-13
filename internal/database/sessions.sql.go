@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const insertSessions = `-- name: InsertSessions :exec
+const insertSession = `-- name: InsertSession :exec
 INSERT INTO sessions (
     session_id,
     user_id
@@ -23,12 +23,12 @@ VALUES
 )
 `
 
-type InsertSessionsParams struct {
+type InsertSessionParams struct {
 	SessionID string
 	UserID    uuid.UUID
 }
 
-func (q *Queries) InsertSessions(ctx context.Context, arg InsertSessionsParams) error {
-	_, err := q.db.ExecContext(ctx, insertSessions, arg.SessionID, arg.UserID)
+func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) error {
+	_, err := q.db.ExecContext(ctx, insertSession, arg.SessionID, arg.UserID)
 	return err
 }
