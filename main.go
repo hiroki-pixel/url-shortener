@@ -1,13 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"math/rand/v2"
 	"net/http"
 	"os"
 	"time"
@@ -193,7 +193,7 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 		return
 	}
 
-	//保存済みhash_passwordとリクエストで受けとったpasswordを照合する
+	//保存済みpassword_hashとリクエストで受けとったpasswordを照合する
 	err = bcrypt.CompareHashAndPassword([]byte(getUserInfo.PasswordHash), []byte(request.Password))
 	if err != nil {
 		//リクエストで受けとったpasswordが無効なものだった
@@ -207,24 +207,43 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 	_, err = rand.Read(randomBytes)
 	if err != nil {
 		http.Error(w, "セッションIDの払出に失敗しました。再度実施してください", http.StatusInternalServerError)
+		return
 	}
 	//[]byte型から文字列に変換する
 	sessionID := base64.RawURLEncoding.EncodeToString(randomBytes)
 
 	//sessionsテーブルへの格納処理
 	//InsertSessionメソッドが要求する構造体InsertSessionParams型の変数を作成。
-	InsertParams := database.InsertSessionParams{
+	insertParams := database.InsertSessionParams{
 		SessionID: sessionID,
 		UserID:    getUserInfo.UserID,
 	}
 
 	//sessionsテーブルへの格納処理実施
-	err = queries.InsertSession(r.Context(), InsertParams)
+	err = queries.InsertSession(r.Context(), insertParams)
 	if err != nil {
 		log.Println("DBへのsessionの格納失敗")
 		http.Error(w, "サーバ内エラーです。しばらくしてもう一度試してください", http.StatusInternalServerError)
+		return
 	}
 
+	//session_idの情報をCookieに入れる。また、cookieの設定をする
+	cookie := &http.Cookie{
+		Name:  "session_id",
+		Value: sessionID,
+		/* Domain: ,　Domain部分は本番環境で設定する*/
+		Path:     "/",
+		MaxAge:   10800, //設定したセッションの持続時間
+		HttpOnly: true,
+		Secure:   false, //開発環境ではfalseだが、本番ではtrueにする必要あり
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	//レスポンスヘッダに設定したcookieを入れる
+	http.SetCookie(w, cookie)
+
+	//Post sessionsの成功レスポンスをする
+	w.WriteHeader(http.StatusCreated)
 }
 
 func main() {
