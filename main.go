@@ -20,6 +20,15 @@ import (
 	"github.com/lib/pq"
 )
 
+// 認証が必要な機能で使用する、認証+目的の機能に処理を飛ばす関数
+func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//認証処理内容。ここが正常にいけば、目的の機能に飛ばすし、でなければ401エラーを返す。
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // 英数字を含むかどうかのバリデーションチェックのための関数
 func containsAlphaAndNumber(s string) bool {
 	hasAlpha := false
