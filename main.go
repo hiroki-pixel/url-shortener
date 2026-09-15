@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
@@ -20,15 +21,28 @@ import (
 	"github.com/lib/pq"
 )
 
+// コンテキスト内でキーの名前衝突を避けるためにstringをもとに自分専用の新しい型を作る
+// authMiddleware及び認証が必要なhandler関数で利用するので、パッケージスコープにて宣言
+type contextKey string
+
+const userIDKey contextKey = "user_id"
+
 // 認証が必要な機能で使用する、認証+目的の機能に処理を飛ばす関数
 func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		//認証処理内容。ここが正常にいけば、目的の機能に飛ばすし、でなければ401や500エラーを返す。
+		//cookieの取得が実施できるかどうか
 		sessionCookie, err := r.Cookie("session_id")
 		if errors.Is(err, http.ErrNoCookie) {
 			http.Error(w, "認証が必要です", http.StatusUnauthorized)
 			return
 		}
+		//cookie取得時にその他エラー発生時のエラーハンドリング
+		if err != nil {
+			http.Error(w, "Cookieの取得に失敗しました", http.StatusBadRequest)
+			return
+		}
+
 		sessionID := sessionCookie.Value
 
 		//sessionを取得するメソッドの使用
@@ -42,7 +56,7 @@ func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 		}
 		//その他のエラーが発生していないかの確認
 		if err != nil {
-			http.Error(w, "DB接続が発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
+			http.Error(w, "DBエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
 			return
 		}
 
@@ -52,9 +66,15 @@ func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 			return
 		}
 
-		//有効なsession_idとして、user_idを確定
-		getSession.UserID
+		//認証が完了したので、リクエストのコンテキストにuser_idを追加
 
+		//コンテキストへの追加の実施
+		ctx := context.WithValue(r.Context(), userIDKey, getSession.UserID)
+
+		//作成した新たなコンテキストをリクエストに紐づける
+		r = r.WithContext(ctx)
+
+		//新しいコンテキストが紐づけられたリクエストを後続Handlerに渡す。
 		next.ServeHTTP(w, r)
 	})
 }
@@ -285,6 +305,17 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 	w.WriteHeader(http.StatusCreated)
 }
 
+// POST urlsのハンドラー関数の設定：現時点では仮
+func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+	userID, ok := r.Context().Value(userIDKey).(uuid.UUID)
+	if !ok {
+		http.Error(w, "user_idの取得に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, "authenticated user_id=%s", userID)
+}
+
 func main() {
 
 	//環境変数の取得確認
@@ -330,6 +361,20 @@ func main() {
 	mux.HandleFunc("POST /sessions", func(w http.ResponseWriter, r *http.Request) {
 		handleCreateSession(w, r, queries)
 	})
+
+	//認証後に呼びたいHandlerの用意をする /* */部分はあとで実装する。
+	createURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handleCreateURL(w, r, queries)
+	})
+	/*
+		listURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleListURL(w, r, queries)
+		}) */
+
+	// authMiddleware(認証が必要なPOST /urls, GET /urls の利用のために必要)のルーティング
+	mux.Handle("POST /urls", authMiddleware(queries, createURLHandler))
+
+	/*mux.Handle("GET /urls", authMiddleware(queries, listURLHandler))*/
 
 	//設定したアドレスとRouterを使用してサーバを起動
 	addr := ":" + port
