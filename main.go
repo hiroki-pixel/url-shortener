@@ -23,7 +23,37 @@ import (
 // 認証が必要な機能で使用する、認証+目的の機能に処理を飛ばす関数
 func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		//認証処理内容。ここが正常にいけば、目的の機能に飛ばすし、でなければ401エラーを返す。
+		//認証処理内容。ここが正常にいけば、目的の機能に飛ばすし、でなければ401や500エラーを返す。
+		sessionCookie, err := r.Cookie("session_id")
+		if errors.Is(err, http.ErrNoCookie) {
+			http.Error(w, "認証が必要です", http.StatusUnauthorized)
+			return
+		}
+		sessionID := sessionCookie.Value
+
+		//sessionを取得するメソッドの使用
+		getSession, err := queries.GetSessionByID(r.Context(), sessionID)
+
+		// sqlcのGetSessionByIDから返されたDBエラーを判定する
+		if errors.Is(err, sql.ErrNoRows) {
+			//リクエストで受けとったsessionが存在しなかった
+			http.Error(w, "認証が必要です", http.StatusUnauthorized)
+			return
+		}
+		//その他のエラーが発生していないかの確認
+		if err != nil {
+			http.Error(w, "DB接続が発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
+			return
+		}
+
+		//取得したセッションの有効期限を確認。
+		if time.Now().After(getSession.ExpiresAt) {
+			http.Error(w, "認証が必要です", http.StatusUnauthorized)
+			return
+		}
+
+		//有効なsession_idとして、user_idを確定
+		getSession.UserID
 
 		next.ServeHTTP(w, r)
 	})

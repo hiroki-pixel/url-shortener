@@ -7,9 +7,28 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const getSessionByID = `-- name: GetSessionByID :one
+SELECT user_id,expires_at
+FROM sessions
+WHERE session_id = $1
+`
+
+type GetSessionByIDRow struct {
+	UserID    uuid.UUID
+	ExpiresAt time.Time
+}
+
+func (q *Queries) GetSessionByID(ctx context.Context, sessionID string) (GetSessionByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionByID, sessionID)
+	var i GetSessionByIDRow
+	err := row.Scan(&i.UserID, &i.ExpiresAt)
+	return i, err
+}
 
 const insertSession = `-- name: InsertSession :exec
 INSERT INTO sessions (
