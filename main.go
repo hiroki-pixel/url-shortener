@@ -76,6 +76,14 @@ func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 
 		//新しいコンテキストが紐づけられたリクエストを後続Handlerに渡す。
 		next.ServeHTTP(w, r)
+
+		//トラブル対応のため一時的に追加
+		log.Printf(
+			"now=%v, expiresAt=%v",
+			time.Now(),
+			getSession.ExpiresAt,
+		)
+
 	})
 }
 
