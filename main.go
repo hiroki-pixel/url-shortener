@@ -362,7 +362,7 @@ func main() {
 		handleCreateSession(w, r, queries)
 	})
 
-	//認証後に呼びたいHandlerの用意をする /* */部分はあとで実装する。
+	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlとGET /url
 	createURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handleCreateURL(w, r, queries)
 	})
@@ -374,6 +374,7 @@ func main() {
 	// authMiddleware(認証が必要なPOST /urls, GET /urls の利用のために必要)のルーティング
 	mux.Handle("POST /urls", authMiddleware(queries, createURLHandler))
 
+	//あとでコメントアウトを外す
 	/*mux.Handle("GET /urls", authMiddleware(queries, listURLHandler))*/
 
 	//設定したアドレスとRouterを使用してサーバを起動
