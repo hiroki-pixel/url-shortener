@@ -336,6 +336,12 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 		return
 	}
 
+	//memoは、未入力でリクエストされた場合、NULLとして扱うようにする。
+	memo := sql.NullString{
+		String: request.Memo,
+		Valid:  request.Memo != "",
+	}
+
 	//入力内容のバリデーションを行う
 	//memoについて
 	if len(request.Memo) > 256 {
