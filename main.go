@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -77,12 +79,12 @@ func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 		//新しいコンテキストが紐づけられたリクエストを後続Handlerに渡す。
 		next.ServeHTTP(w, r)
 
-		//トラブル対応のため一時的に追加
+		/* タイムゾーントラブル分析のため一時的に追加
 		log.Printf(
 			"now=%v, expiresAt=%v",
 			time.Now(),
 			getSession.ExpiresAt,
-		)
+		)　*/
 
 	})
 }
@@ -298,7 +300,7 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 	cookie := &http.Cookie{
 		Name:  "session_id",
 		Value: sessionID,
-		/* Domain: ,　Domain部分は本番環境で設定する*/
+		/* Domain: ,　Domain部分は設定しない*/
 		Path:     "/",
 		MaxAge:   10800, //設定したセッションの持続時間
 		HttpOnly: true,
@@ -315,13 +317,85 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 
 // POST urlsのハンドラー関数の設定：現時点では仮
 func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+	// 認証済みリクエストのコンテキストに登録されているuserIDを取り出す
 	userID, ok := r.Context().Value(userIDKey).(uuid.UUID)
 	if !ok {
-		http.Error(w, "user_idの取得に失敗しました", http.StatusInternalServerError)
+		http.Error(w, "認証情報の取得に失敗しました", http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Fprintf(w, "authenticated user_id=%s", userID)
+	//リクエスト内容をGoで扱えるようにする
+	type createURLRequest struct {
+		OriginalURL string `json:"original_url"`
+		Memo        string `json:"memo"`
+	}
+	request := createURLRequest{}
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "Invalid Request", http.StatusBadRequest)
+		return
+	}
+
+	//入力内容のバリデーションを行う
+	//memoについて
+	if len(request.Memo) > 256 {
+		http.Error(w, "memoは256桁以内で登録してください", http.StatusBadRequest)
+		return
+	}
+
+	//original_urlについて
+	if request.OriginalURL == "" {
+		http.Error(w, "original_urlは必須項目です", http.StatusBadRequest)
+		return
+	}
+
+	if len(request.OriginalURL) > 2048 {
+		http.Error(w, "original_urlが登録可能な長さを超過しています", http.StatusBadRequest)
+		return
+	}
+
+	//URLの形式が正しいかについてのチェック
+	//parsedURLへの変換とスキーマ、ホスト部の確認
+	parsedURL, err := url.Parse(request.OriginalURL)
+	if err != nil {
+		http.Error(w, "URLとして認識されませんでした、入力内容を確認してください", http.StatusBadRequest)
+		return
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		http.Error(w, "スキームはhttpもしくはhttpsとしてください、入力内容を確認してください", http.StatusBadRequest)
+		return
+	}
+
+	if parsedURL.Host == "" {
+		http.Error(w, "host部分が確認できませんでした、入力内容を確認してください", http.StatusBadRequest)
+		return
+	}
+
+	//short_codeの生成処理。
+	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+	randAlphaNumeric := func(n int) (string, error) {
+		result := make([]byte, n)
+
+		for i := 0; i < n; i++ {
+			randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+			if err != nil {
+				return "", err
+			}
+
+			result[i] = letters[randomIndex.Int64()]
+		}
+
+		return string(result), nil
+	}
+
+	shortCode, err := randAlphaNumeric(6)
+	if err != nil {
+		http.Error(w, "短縮コードの生成に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
 }
 
 func main() {
