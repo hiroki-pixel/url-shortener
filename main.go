@@ -155,7 +155,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.
 
 	log.Printf("usernameは%sで、passwordは%sです\n", request.Username, "隠ぺい")
 
-	//処理として、user_idを払い出す。また、パスワードをハッシュ化する。
+	//user_idを払い出す。また、パスワードをハッシュ化する。
 	userID := uuid.New()
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -372,7 +372,10 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 		return
 	}
 
-	//short_codeの生成処理。
+	//url_idを払い出す。
+	urlID := uuid.New()
+
+	//short_codeの払出し処理。
 	//ランダムなn桁な英数字の文字列の生成関数randAlphaNumeric関数
 	//使用許可設定した英数字からランダムに選んで一つずつ詰めていく作業をしている
 	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
