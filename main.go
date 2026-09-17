@@ -373,8 +373,9 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 	}
 
 	//short_codeの生成処理。
+	//ランダムなn桁な英数字の文字列の生成関数randAlphaNumeric関数
+	//使用許可設定した英数字からランダムに選んで一つずつ詰めていく作業をしている
 	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-
 	randAlphaNumeric := func(n int) (string, error) {
 		result := make([]byte, n)
 
@@ -390,6 +391,7 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 		return string(result), nil
 	}
 
+	//randAlphaNumeric関数を使用してshort_codeを生成
 	shortCode, err := randAlphaNumeric(6)
 	if err != nil {
 		http.Error(w, "短縮コードの生成に失敗しました", http.StatusInternalServerError)
