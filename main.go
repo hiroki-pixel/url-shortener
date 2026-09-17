@@ -337,6 +337,7 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 	}
 
 	//memoは、未入力でリクエストされた場合、NULLとして扱うようにする。
+	//入力値についてのAP側の意味やルールによる判断のため、DB側でNULLIF""を使うと暗黙知になると判断
 	memo := sql.NullString{
 		String: request.Memo,
 		Valid:  request.Memo != "",
@@ -407,6 +408,33 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 		return
 	}
 
+	//InsertURLメソッドを利用して、urlsテーブルにInsert
+	//引数となる、構造体を用意
+	insertParams := database.InsertURLParams{
+		UrlID:       urlID,
+		UserID:      userID,
+		OriginalUrl: request.OriginalURL,
+		Memo:        memo,
+		ShortCode:   shortCode,
+	}
+	err = queries.InsertURL(r.Context(), insertParams)
+
+	//Insert時にエラー発生した際のエラーハンドリング
+	//user_id + original_url でのUNIQUE制約に引っかかった場合（Conflict）
+	// sqlcのInsertURLから返されたDBエラーを判定する
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Constraint == "urls_user_id_original_url_key" {
+		log.Println("You registered original_url before. Failed to INSERT URLRow ")
+		http.Error(w, "URLが既に登録されています。重複したURLの登録は禁止されています。", http.StatusConflict)
+		return
+	}
+
+	//その他のエラー(InternalServerError)
+	if err != nil {
+		log.Println("Failed to INSERT URLRow")
+		http.Error(w, "サーバ内部のエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
+		return
+	}
 }
 
 func main() {
