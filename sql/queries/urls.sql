@@ -13,3 +13,9 @@ VALUES(
     $4,
     $5
 );
+
+-- name: ListsURLByUserID :many
+SELECT short_code,original_url,memo
+FROM urls
+WHERE user_id = $1
+ORDER BY created_at DESC;

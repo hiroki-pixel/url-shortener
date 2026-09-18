@@ -47,3 +47,39 @@ func (q *Queries) InsertURL(ctx context.Context, arg InsertURLParams) error {
 	)
 	return err
 }
+
+const listsURLByUserID = `-- name: ListsURLByUserID :many
+SELECT short_code,original_url,memo
+FROM urls
+WHERE user_id = $1
+ORDER BY created_at DESC
+`
+
+type ListsURLByUserIDRow struct {
+	ShortCode   string
+	OriginalUrl string
+	Memo        sql.NullString
+}
+
+func (q *Queries) ListsURLByUserID(ctx context.Context, userID uuid.UUID) ([]ListsURLByUserIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listsURLByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListsURLByUserIDRow
+	for rows.Next() {
+		var i ListsURLByUserIDRow
+		if err := rows.Scan(&i.ShortCode, &i.OriginalUrl, &i.Memo); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

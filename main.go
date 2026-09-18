@@ -315,8 +315,9 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 	w.WriteHeader(http.StatusCreated)
 }
 
-// POST urlsのハンドラー関数の設定：現時点では仮
-func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+// POST urlsのハンドラー関数の設定。
+// short_urlの生成にBASE_URLが必要なので、main関数でbaseURLとして取得確認したものも引数にする
+func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Queries, baseURL string) {
 	// 認証済みリクエストのコンテキストに登録されているuserIDを取り出す
 	userID, ok := r.Context().Value(userIDKey).(uuid.UUID)
 	if !ok {
@@ -408,6 +409,15 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 		return
 	}
 
+	//short_urlの生成
+	//BASE_URL + short_code を行い、short_urlを作成する
+	shortURL, err := url.JoinPath(baseURL, shortCode)
+	if err != nil {
+		log.Println("shortURL生成に失敗")
+		http.Error(w, "短縮URLの生成に失敗しました。再度試してください", http.StatusInternalServerError)
+		return
+	}
+
 	//InsertURLメソッドを利用して、urlsテーブルにInsert
 	//引数となる、構造体を用意
 	insertParams := database.InsertURLParams{
@@ -435,6 +445,89 @@ func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 		http.Error(w, "サーバ内部のエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
 		return
 	}
+
+	//responseの返却
+	//responseの構造体を作成
+	type registerURLResponse struct {
+		ShortCode string `json:"short_code"`
+		ShortURL  string `json:"short_url"`
+	}
+	response := registerURLResponse{
+		ShortCode: shortCode,
+		ShortURL:  shortURL,
+	}
+
+	//responseに内容を詰め込む
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	err = json.NewEncoder(w).Encode(response)
+	if err != nil {
+		log.Printf("Failed to Encode Response %v\n", err)
+	}
+
+}
+
+// GET urlsのハンドラー関数の設定
+func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Queries, baseURL string) {
+	//認証済みリクエストのContextからuser_idを取り出す。
+	userID, ok := r.Context().Value(userIDKey).(uuid.UUID)
+	if !ok {
+		http.Error(w, "認証情報の取得に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	//ListsURLメソッドの実施（userIDに紐づくurl等情報の取得）
+	listURLInfo, err := queries.ListsURLByUserID(r.Context(), userID)
+
+	//DBへの検索処理についてerrのハンドリングをする
+	//検索した結果何もない、というのは正常系
+
+	if err != nil {
+		//その他のエラー
+		http.Error(w, "サーバエラーが発生しました。しばらく時間をおいて再度試してください", http.StatusInternalServerError)
+		return
+	}
+
+	//レスポンスのための構造体を作成
+	type URLResponse struct {
+		ShortCode   string `json:"short_code"`
+		ShortURL    string `json:"short_url"`
+		OriginalURL string `json:"original_url"`
+		Memo        string `json:"memo"`
+	}
+
+	//レスポンスのための構造体を詰め込むスライスを作成
+	var responses []URLResponse
+
+	//レスポンス情報のために、short_urlを作成
+	//BASE_URL + short_code を行い、short_urlを作成しつつ、レスポンス情報を作成する
+	for _, v := range listURLInfo {
+		shortURL, err := url.JoinPath(baseURL, v.ShortCode)
+		if err != nil {
+			http.Error(w, "レスポンス情報の生成に失敗しました。再度時間をおいて試してください", http.StatusInternalServerError)
+			return
+		}
+
+		//MemoをDBに格納しているsql.NullString型から、API用のstring型に変換
+		memo := ""
+		if v.Memo.Valid {
+			memo = v.Memo.String
+		}
+
+		response := URLResponse{
+			ShortCode:   v.ShortCode,
+			ShortURL:    shortURL,
+			OriginalURL: v.OriginalUrl,
+			Memo:        memo,
+		}
+		responses = append(responses, response)
+	}
+
+	//レスポンスの返却
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	err = json.NewEncoder(w).Encode(responses)
+
 }
 
 func main() {
@@ -450,6 +543,11 @@ func main() {
 		log.Fatal("PORT is not found")
 	}
 	log.Println("PORT:", port)
+
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		log.Fatal("baseURL is not found")
+	}
 
 	//DBへの接続確認
 	dbURL := os.Getenv("DB_URL")
@@ -483,17 +581,19 @@ func main() {
 		handleCreateSession(w, r, queries)
 	})
 
-	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlとGET /url
+	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls
+	// POST / urlsに関してbaseURLが必須になるので引数に追加
 	createURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handleCreateURL(w, r, queries)
+		handleCreateURL(w, r, queries, baseURL)
 	})
-	/*
-		listURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleListURL(w, r, queries)
-		}) */
+
+	listURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handleListURL(w, r, queries, baseURL)
+	})
 
 	// authMiddleware(認証が必要なPOST /urls, GET /urls の利用のために必要)のルーティング
 	mux.Handle("POST /urls", authMiddleware(queries, createURLHandler))
+	mux.Handle("GET /urls", authMiddleware(queries, listURLHandler))
 
 	//あとでコメントアウトを外す
 	/*mux.Handle("GET /urls", authMiddleware(queries, listURLHandler))*/
