@@ -497,7 +497,8 @@ func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Que
 	}
 
 	//レスポンスのための構造体を詰め込むスライスを作成
-	var responses []URLResponse
+	//1件もappendされなかったときに空スライス[]を返せるように、初期化
+	responses := []URLResponse{}
 
 	//レスポンス情報のために、short_urlを作成
 	//BASE_URL + short_code を行い、short_urlを作成しつつ、レスポンス情報を作成する
