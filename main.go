@@ -477,7 +477,7 @@ func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Que
 	}
 
 	//ListsURLメソッドの実施（userIDに紐づくurl等情報の取得）
-	listURLInfo, err := queries.ListsURLByUserID(r.Context(), userID)
+	urlRows, err := queries.ListsURLByUserID(r.Context(), userID)
 
 	//DBへの検索処理についてerrのハンドリングをする
 	//検索した結果何もない、というのは正常系
@@ -496,14 +496,14 @@ func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Que
 		Memo        string `json:"memo"`
 	}
 
-	//レスポンスのための構造体を詰め込むスライスを作成
-	//1件もappendされなかったときに空スライス[]を返せるように、初期化
-	responses := []URLResponse{}
+	//今回のレスポンスは複数件返す可能性があるため、構造体を詰め込むスライスを作成する必要がある
+	//1件もappendされなかったときに空スライス[]を返せるように、初期化しておく。
+	urlResponses := []URLResponse{}
 
 	//レスポンス情報のために、short_urlを作成
 	//BASE_URL + short_code を行い、short_urlを作成しつつ、レスポンス情報を作成する
-	for _, v := range listURLInfo {
-		shortURL, err := url.JoinPath(baseURL, v.ShortCode)
+	for _, row := range urlRows {
+		shortURL, err := url.JoinPath(baseURL, row.ShortCode)
 		if err != nil {
 			http.Error(w, "レスポンス情報の生成に失敗しました。再度時間をおいて試してください", http.StatusInternalServerError)
 			return
@@ -511,23 +511,24 @@ func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Que
 
 		//MemoをDBに格納しているsql.NullString型から、API用のstring型に変換
 		memo := ""
-		if v.Memo.Valid {
-			memo = v.Memo.String
+		if row.Memo.Valid {
+			memo = row.Memo.String
 		}
 
-		response := URLResponse{
-			ShortCode:   v.ShortCode,
+		urlResponse := URLResponse{
+			ShortCode:   row.ShortCode,
 			ShortURL:    shortURL,
-			OriginalURL: v.OriginalUrl,
+			OriginalURL: row.OriginalUrl,
 			Memo:        memo,
 		}
-		responses = append(responses, response)
+		urlResponses = append(urlResponses, urlResponse)
 	}
 
 	//レスポンスの返却
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	err = json.NewEncoder(w).Encode(responses)
+	if err := json.NewEncoder(w).Encode(urlResponses); err != nil {
+		log.Println("レスポンス生成に失敗:", err)
+	}
 
 }
 
