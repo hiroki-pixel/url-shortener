@@ -547,12 +547,13 @@ func handleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Qu
 		return
 	}
 	matched, err := regexp.MatchString(`^[a-zA-Z0-9]+$`, shortCode)
-	if !matched {
-		http.Error(w, "short_codeは英数字で入力してください", http.StatusBadRequest)
-		return
-	}
 	if err != nil {
 		http.Error(w, "サーバエラーが発生しました。時間をおいて試してください", http.StatusInternalServerError)
+		return
+	}
+
+	if !matched {
+		http.Error(w, "short_codeは英数字で入力してください", http.StatusBadRequest)
 		return
 	}
 
