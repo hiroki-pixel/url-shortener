@@ -557,6 +557,22 @@ func handleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Qu
 		return
 	}
 
+	//sqlc生成メソッドを使用して、original_urlを取得
+	originalURL, err := queries.GetOriginURLByShortCode(r.Context(), shortCode)
+	//DBへの検索処理についてerrのハンドリングをする
+	// GetOriginURLByShortCodeから返されたDBエラーを判定する
+	if errors.Is(err, sql.ErrNoRows) {
+		//リクエストで受けとったshort_codeでの検索結果が存在しなかった
+		http.Error(w, "無効なshort_codeです", http.StatusNotFound)
+		return
+	}
+
+	if err != nil {
+		//その他のエラー
+		http.Error(w, "サーバエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
+		return
+	}
+
 }
 
 func main() {
