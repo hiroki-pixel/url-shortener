@@ -12,6 +12,19 @@ import (
 	"github.com/google/uuid"
 )
 
+const getOriginURLByShortCode = `-- name: GetOriginURLByShortCode :one
+SELECT original_url
+FROM urls
+WHERE short_code = $1
+`
+
+func (q *Queries) GetOriginURLByShortCode(ctx context.Context, shortCode string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getOriginURLByShortCode, shortCode)
+	var original_url string
+	err := row.Scan(&original_url)
+	return original_url, err
+}
+
 const insertURL = `-- name: InsertURL :exec
 INSERT INTO urls (
     url_id,

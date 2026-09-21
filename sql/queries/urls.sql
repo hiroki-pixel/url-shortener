@@ -19,3 +19,8 @@ SELECT short_code,original_url,memo
 FROM urls
 WHERE user_id = $1
 ORDER BY created_at DESC;
+
+-- name: GetOriginURLByShortCode :one
+SELECT original_url
+FROM urls
+WHERE short_code = $1;

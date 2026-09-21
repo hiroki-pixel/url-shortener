@@ -532,6 +532,14 @@ func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Que
 
 }
 
+// GET {short_code}のハンドラー関数の設定
+func handleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+	//リクエストから、パスパラメータに設定しているshort_codeの値を取得
+	shortCode := r.PathValue("short_code")
+	//shortCodeの値についてバリデーションチェックをする
+
+}
+
 func main() {
 
 	//環境変数の取得確認
@@ -581,6 +589,11 @@ func main() {
 	//Post /sessionsのルーティング
 	mux.HandleFunc("POST /sessions", func(w http.ResponseWriter, r *http.Request) {
 		handleCreateSession(w, r, queries)
+	})
+
+	//GET /{short_code}のルーティング
+	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
+		handleRedirect(w, r, queries)
 	})
 
 	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls
