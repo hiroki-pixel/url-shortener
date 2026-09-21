@@ -573,6 +573,9 @@ func handleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Qu
 		return
 	}
 
+	//302の返却およびLocationヘッダーにoriginalURLを設定してリダイレクトの実施
+	http.Redirect(w, r, originalURL, http.StatusFound)
+
 }
 
 func main() {
