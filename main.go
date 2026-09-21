@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -537,6 +538,23 @@ func handleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Qu
 	//リクエストから、パスパラメータに設定しているshort_codeの値を取得
 	shortCode := r.PathValue("short_code")
 	//shortCodeの値についてバリデーションチェックをする
+	if shortCode == "" {
+		http.Error(w, "short_codeを入力してください", http.StatusBadRequest)
+		return
+	}
+	if len(shortCode) != 6 {
+		http.Error(w, "short_codeは6桁です、再度確認して入力してください", http.StatusBadRequest)
+		return
+	}
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9]+$`, shortCode)
+	if !matched {
+		http.Error(w, "short_codeは英数字で入力してください", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, "サーバエラーが発生しました。時間をおいて試してください", http.StatusInternalServerError)
+		return
+	}
 
 }
 
