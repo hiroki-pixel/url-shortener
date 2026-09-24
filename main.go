@@ -648,9 +648,6 @@ func main() {
 	mux.Handle("POST /urls", authMiddleware(queries, createURLHandler))
 	mux.Handle("GET /urls", authMiddleware(queries, listURLHandler))
 
-	//あとでコメントアウトを外す
-	/*mux.Handle("GET /urls", authMiddleware(queries, listURLHandler))*/
-
 	//設定したアドレスとRouterを使用してサーバを起動
 	addr := ":" + port
 	log.Fatal(http.ListenAndServe(addr, mux))
