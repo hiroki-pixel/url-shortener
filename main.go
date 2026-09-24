@@ -13,12 +13,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/google/uuid"
+	"github.com/hiroki-pixel/url-shortener/handler"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/joho/godotenv"
 	"github.com/lib/pq"
@@ -533,51 +533,6 @@ func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Que
 
 }
 
-// GET {short_code}のハンドラー関数の設定
-func handleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
-	//リクエストから、パスパラメータに設定しているshort_codeの値を取得
-	shortCode := r.PathValue("short_code")
-	//shortCodeの値についてバリデーションチェックをする
-	if shortCode == "" {
-		http.Error(w, "short_codeを入力してください", http.StatusBadRequest)
-		return
-	}
-	if len(shortCode) != 6 {
-		http.Error(w, "short_codeは6桁です、再度確認して入力してください", http.StatusBadRequest)
-		return
-	}
-	matched, err := regexp.MatchString(`^[a-zA-Z0-9]+$`, shortCode)
-	if err != nil {
-		http.Error(w, "サーバエラーが発生しました。時間をおいて試してください", http.StatusInternalServerError)
-		return
-	}
-
-	if !matched {
-		http.Error(w, "short_codeは英数字で入力してください", http.StatusBadRequest)
-		return
-	}
-
-	//sqlc生成メソッドを使用して、original_urlを取得
-	originalURL, err := queries.GetOriginURLByShortCode(r.Context(), shortCode)
-	//DBへの検索処理についてerrのハンドリングをする
-	// GetOriginURLByShortCodeから返されたDBエラーを判定する
-	if errors.Is(err, sql.ErrNoRows) {
-		//リクエストで受けとったshort_codeでの検索結果が存在しなかった
-		http.Error(w, "無効なshort_codeです", http.StatusNotFound)
-		return
-	}
-
-	if err != nil {
-		//その他のエラー
-		http.Error(w, "サーバエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
-		return
-	}
-
-	//302の返却およびLocationヘッダーにoriginalURLを設定してリダイレクトの実施
-	http.Redirect(w, r, originalURL, http.StatusFound)
-
-}
-
 func main() {
 
 	//環境変数の取得確認
@@ -631,7 +586,7 @@ func main() {
 
 	//GET /{short_code}のルーティング
 	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
-		handleRedirect(w, r, queries)
+		handler.HandleRedirect(w, r, queries)
 	})
 
 	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls
