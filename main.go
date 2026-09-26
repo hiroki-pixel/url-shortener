@@ -1,27 +1,18 @@
 package main
 
 import (
-	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
-	"net/url"
 	"os"
-	"regexp"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
-	"github.com/google/uuid"
+	"github.com/hiroki-pixel/url-shortener/handler"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
+	"github.com/hiroki-pixel/url-shortener/internal/requestcontext"
 	"github.com/joho/godotenv"
-	"github.com/lib/pq"
 )
 
 // コンテキスト内でキーの名前衝突を避けるためにstringをもとに自分専用の新しい型を作る
@@ -72,7 +63,7 @@ func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 		//認証が完了したので、リクエストのコンテキストにuser_idを追加
 
 		//コンテキストへの追加の実施
-		ctx := context.WithValue(r.Context(), userIDKey, getSession.UserID)
+		ctx := requestcontext.WithUserID(r.Context(), getSession.UserID)
 
 		//作成した新たなコンテキストをリクエストに紐づける
 		r = r.WithContext(ctx)
@@ -88,494 +79,6 @@ func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 		)　*/
 
 	})
-}
-
-// 英数字を含むかどうかのバリデーションチェックのための関数
-func containsAlphaAndNumber(s string) bool {
-	hasAlpha := false
-	hasDigit := false
-
-	for _, r := range s {
-		switch {
-		case 'A' <= r && r <= 'Z':
-			hasAlpha = true
-		case 'a' <= r && r <= 'z':
-			hasAlpha = true
-		case '0' <= r && r <= '9':
-			hasDigit = true
-		}
-		if hasAlpha && hasDigit {
-			return true
-		}
-	}
-	return false
-}
-
-// POST usersハンドラー関数の設定
-func handleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
-	//jsonで受けとったリクエスト情報をGoで扱えるようにDecodeする
-	type createUserRequest struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-
-	request := createUserRequest{}
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		log.Printf("Failed to Decode Request Body %v\n", err)
-		http.Error(w, "不正なリクエストです\n", http.StatusBadRequest)
-		return
-	}
-	//バリデーションチェックの実装
-	//usernameのバリデーションチェック
-	if request.Username == "" {
-		http.Error(w, "usernameは必須項目です\n", http.StatusBadRequest)
-		return
-	}
-
-	if len(request.Username) < 5 || len(request.Username) > 15 {
-		http.Error(w, "usernameは5桁以上15桁以下で設定する必要があります\n", http.StatusBadRequest)
-		return
-	}
-
-	//passwordのバリデーションチェック
-	if request.Password == "" {
-		http.Error(w, "passwordは必須項目です\n", http.StatusBadRequest)
-		return
-	}
-
-	if len(request.Password) < 8 || len(request.Password) > 64 {
-		http.Error(w, "passwordは8桁以上64桁以下で設定する必要があります\n", http.StatusBadRequest)
-		return
-	}
-
-	if containsAlphaAndNumber(request.Password) == false {
-		http.Error(w, "passwordは英数字を両方含む必要があります\n", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("usernameは%sで、passwordは%sです\n", request.Username, "隠ぺい")
-
-	//user_idを払い出す。また、パスワードをハッシュ化する。
-	userID := uuid.New()
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
-	if err != nil {
-		log.Println("Failed to Create HashPassword")
-		http.Error(w, "パスワードの保存に失敗しました", http.StatusInternalServerError)
-		return
-	}
-
-	//byte配列のハッシュパスワードを文字列に変換しておく
-	passwordHashString := string(passwordHash)
-
-	//sqlcの導入後のDBへの格納処理
-	//sqlcが要求する引数になる構造体(InsertUserParams)の作成
-	insertParams := database.InsertUserParams{
-		UserID:       userID,
-		Username:     request.Username,
-		PasswordHash: passwordHashString,
-	}
-	//sqlcで作った、InsertUserメソッドを使う
-	createdAt, err := queries.InsertUser(r.Context(), insertParams)
-
-	// sqlcのInsertUserから返されたDBエラーを判定する
-	var pqErr *pq.Error
-
-	//usernameの重複エラーのエラーハンドリングをする
-	if errors.As(err, &pqErr) && pqErr.Constraint == "users_username_key" {
-		log.Println("Your username is not Unique. Failed to INSERT UserRow ")
-		http.Error(w, "ユーザ名が既に使用されているためユーザ登録に失敗しました。別のユーザ名を使用してください", http.StatusConflict)
-		return
-	}
-	//その他のINSERT分の中でエラーが発生した場合のエラーハンドリングをする。
-	if err != nil {
-		log.Println("Failed to INSERT UserRow")
-		http.Error(w, "サーバエラーのためユーザ登録に失敗しました。時間をおいて再度試してください。", http.StatusInternalServerError)
-		return
-	}
-
-	//レスポンス情報を作る
-	type createUserResponse struct {
-		UserID    uuid.UUID `json:"user_id"`
-		Username  string    `json:"username"`
-		CreatedAt time.Time `json:"created_at"`
-	}
-	response := createUserResponse{}
-
-	//レスポンス用の構造体のフィールドに、処理で作成した情報やリクエストで得た情報を詰め込む
-	response.UserID = userID
-	response.CreatedAt = createdAt
-	response.Username = insertParams.Username
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		log.Printf("Failed to Encode Response %v\n", err)
-	}
-}
-
-// POST sessionsハンドラー関数の設定
-func handleCreateSession(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
-	type createSessionRequest struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-
-	//リクエスト内容をGoで扱えるようにする
-	request := createSessionRequest{}
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		log.Printf("Failed to Decode Request Body %v\n", err)
-		http.Error(w, "不正なリクエストです", http.StatusBadRequest)
-		return
-	}
-
-	// POST sessionsでは必須項目の有無のみチェックする
-	//ユーザ存在確認とパスワードの正当性の検証は後続処理で反映
-	if request.Username == "" {
-		log.Println("username is required")
-		http.Error(w, "不正なリクエストです。ユーザネームは必須項目です", http.StatusBadRequest)
-		return
-	}
-
-	if request.Password == "" {
-		log.Println("password is required")
-		http.Error(w, "不正なリクエストです。パスワードは必須項目です", http.StatusBadRequest)
-		return
-	}
-
-	//usersテーブルへのusername検索およびpassword_hashの取得
-	//sqlcで作成したusername検索メソッドの利用
-	getUserInfo, err := queries.GetUserByUsername(r.Context(), request.Username)
-
-	//DBへの検索処理についてerrのハンドリングをする
-	// sqlcのGettUserByUsernameから返されたDBエラーを判定する
-	if errors.Is(err, sql.ErrNoRows) {
-		//リクエストで受けとったusernameが存在しなかった
-		http.Error(w, "無効なユーザ名またはパスワードです", http.StatusUnauthorized)
-		return
-	}
-
-	if err != nil {
-		//その他のエラー
-		http.Error(w, "サーバエラーが発生しました。しばらく時間をおいて再度試してください", http.StatusInternalServerError)
-		return
-	}
-
-	//保存済みpassword_hashとリクエストで受けとったpasswordを照合する
-	err = bcrypt.CompareHashAndPassword([]byte(getUserInfo.PasswordHash), []byte(request.Password))
-	if err != nil {
-		//リクエストで受けとったpasswordが無効なものだった
-		http.Error(w, "無効なユーザ名またはパスワードです", http.StatusUnauthorized)
-		return
-	}
-
-	//session_idの発行処理
-	randomBytes := make([]byte, 32)
-
-	_, err = rand.Read(randomBytes)
-	if err != nil {
-		http.Error(w, "セッションIDの払出に失敗しました。再度実施してください", http.StatusInternalServerError)
-		return
-	}
-	//[]byte型から文字列に変換する
-	sessionID := base64.RawURLEncoding.EncodeToString(randomBytes)
-
-	//sessionsテーブルへの格納処理
-	//InsertSessionメソッドが要求する構造体InsertSessionParams型の変数を作成。
-	insertParams := database.InsertSessionParams{
-		SessionID: sessionID,
-		UserID:    getUserInfo.UserID,
-	}
-
-	//sessionsテーブルへの格納処理実施
-	err = queries.InsertSession(r.Context(), insertParams)
-	if err != nil {
-		log.Println("DBへのsessionの格納失敗")
-		http.Error(w, "サーバ内エラーです。しばらくしてもう一度試してください", http.StatusInternalServerError)
-		return
-	}
-
-	//session_idの情報をCookieに入れる。また、cookieの設定をする
-	cookie := &http.Cookie{
-		Name:  "session_id",
-		Value: sessionID,
-		/* Domain: ,　Domain部分は設定しない*/
-		Path:     "/",
-		MaxAge:   10800, //設定したセッションの持続時間
-		HttpOnly: true,
-		Secure:   false, //開発環境ではfalseだが、本番ではtrueにする必要あり
-		SameSite: http.SameSiteLaxMode,
-	}
-
-	//レスポンスヘッダに設定したcookieを入れる
-	http.SetCookie(w, cookie)
-
-	//Post sessionsの成功レスポンスをする
-	w.WriteHeader(http.StatusCreated)
-}
-
-// POST urlsのハンドラー関数の設定。
-// short_urlの生成にBASE_URLが必要なので、main関数でbaseURLとして取得確認したものも引数にする
-func handleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Queries, baseURL string) {
-	// 認証済みリクエストのコンテキストに登録されているuserIDを取り出す
-	userID, ok := r.Context().Value(userIDKey).(uuid.UUID)
-	if !ok {
-		http.Error(w, "認証情報の取得に失敗しました", http.StatusInternalServerError)
-		return
-	}
-
-	//リクエスト内容をGoで扱えるようにする
-	type createURLRequest struct {
-		OriginalURL string `json:"original_url"`
-		Memo        string `json:"memo"`
-	}
-	request := createURLRequest{}
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, "Invalid Request", http.StatusBadRequest)
-		return
-	}
-
-	//memoは、未入力でリクエストされた場合、NULLとして扱うようにする。
-	//入力値についてのAP側の意味やルールによる判断のため、DB側でNULLIF""を使うと暗黙知になると判断
-	memo := sql.NullString{
-		String: request.Memo,
-		Valid:  request.Memo != "",
-	}
-
-	//入力内容のバリデーションを行う
-	//memoについて
-	if len(request.Memo) > 256 {
-		http.Error(w, "memoは256桁以内で登録してください", http.StatusBadRequest)
-		return
-	}
-
-	//original_urlについて
-	if request.OriginalURL == "" {
-		http.Error(w, "original_urlは必須項目です", http.StatusBadRequest)
-		return
-	}
-
-	if len(request.OriginalURL) > 2048 {
-		http.Error(w, "original_urlが登録可能な長さを超過しています", http.StatusBadRequest)
-		return
-	}
-
-	//URLの形式が正しいかについてのチェック
-	//parsedURLへの変換とスキーマ、ホスト部の確認
-	parsedURL, err := url.Parse(request.OriginalURL)
-	if err != nil {
-		http.Error(w, "URLとして認識されませんでした、入力内容を確認してください", http.StatusBadRequest)
-		return
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		http.Error(w, "スキームはhttpもしくはhttpsとしてください、入力内容を確認してください", http.StatusBadRequest)
-		return
-	}
-
-	if parsedURL.Host == "" {
-		http.Error(w, "host部分が確認できませんでした、入力内容を確認してください", http.StatusBadRequest)
-		return
-	}
-
-	//url_idを払い出す。
-	urlID := uuid.New()
-
-	//short_codeの払出し処理。
-	//ランダムなn桁な英数字の文字列の生成関数randAlphaNumeric関数
-	//使用許可設定した英数字からランダムに選んで一つずつ詰めていく作業をしている
-	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-	randAlphaNumeric := func(n int) (string, error) {
-		result := make([]byte, n)
-
-		for i := 0; i < n; i++ {
-			randomIndex, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
-			if err != nil {
-				return "", err
-			}
-
-			result[i] = letters[randomIndex.Int64()]
-		}
-
-		return string(result), nil
-	}
-
-	//randAlphaNumeric関数を使用してshort_codeを生成
-	shortCode, err := randAlphaNumeric(6)
-	if err != nil {
-		http.Error(w, "短縮コードの生成に失敗しました", http.StatusInternalServerError)
-		return
-	}
-
-	//short_urlの生成
-	//BASE_URL + short_code を行い、short_urlを作成する
-	shortURL, err := url.JoinPath(baseURL, shortCode)
-	if err != nil {
-		log.Println("shortURL生成に失敗")
-		http.Error(w, "短縮URLの生成に失敗しました。再度試してください", http.StatusInternalServerError)
-		return
-	}
-
-	//InsertURLメソッドを利用して、urlsテーブルにInsert
-	//引数となる、構造体を用意
-	insertParams := database.InsertURLParams{
-		UrlID:       urlID,
-		UserID:      userID,
-		OriginalUrl: request.OriginalURL,
-		Memo:        memo,
-		ShortCode:   shortCode,
-	}
-	err = queries.InsertURL(r.Context(), insertParams)
-
-	//Insert時にエラー発生した際のエラーハンドリング
-	//user_id + original_url でのUNIQUE制約に引っかかった場合（Conflict）
-	// sqlcのInsertURLから返されたDBエラーを判定する
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && pqErr.Constraint == "urls_user_id_original_url_key" {
-		log.Println("You registered original_url before. Failed to INSERT URLRow ")
-		http.Error(w, "URLが既に登録されています。重複したURLの登録は禁止されています。", http.StatusConflict)
-		return
-	}
-
-	//その他のエラー(InternalServerError)
-	if err != nil {
-		log.Println("Failed to INSERT URLRow")
-		http.Error(w, "サーバ内部のエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
-		return
-	}
-
-	//responseの返却
-	//responseの構造体を作成
-	type registerURLResponse struct {
-		ShortCode string `json:"short_code"`
-		ShortURL  string `json:"short_url"`
-	}
-	response := registerURLResponse{
-		ShortCode: shortCode,
-		ShortURL:  shortURL,
-	}
-
-	//responseに内容を詰め込む
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		log.Printf("Failed to Encode Response %v\n", err)
-	}
-
-}
-
-// GET urlsのハンドラー関数の設定
-func handleListURL(w http.ResponseWriter, r *http.Request, queries *database.Queries, baseURL string) {
-	//認証済みリクエストのContextからuser_idを取り出す。
-	userID, ok := r.Context().Value(userIDKey).(uuid.UUID)
-	if !ok {
-		http.Error(w, "認証情報の取得に失敗しました", http.StatusInternalServerError)
-		return
-	}
-
-	//ListsURLメソッドの実施（userIDに紐づくurl等情報の取得）
-	urlRows, err := queries.ListsURLByUserID(r.Context(), userID)
-
-	//DBへの検索処理についてerrのハンドリングをする
-	//検索した結果何もない、というのは正常系
-
-	if err != nil {
-		//その他のエラー
-		http.Error(w, "サーバエラーが発生しました。しばらく時間をおいて再度試してください", http.StatusInternalServerError)
-		return
-	}
-
-	//レスポンスのための構造体を作成
-	type URLResponse struct {
-		ShortCode   string `json:"short_code"`
-		ShortURL    string `json:"short_url"`
-		OriginalURL string `json:"original_url"`
-		Memo        string `json:"memo"`
-	}
-
-	//今回のレスポンスは複数件返す可能性があるため、構造体を詰め込むスライスを作成する必要がある
-	//1件もappendされなかったときに空スライス[]を返せるように、初期化しておく。
-	urlResponses := []URLResponse{}
-
-	//レスポンス情報のために、short_urlを作成
-	//BASE_URL + short_code を行い、short_urlを作成しつつ、レスポンス情報を作成する
-	for _, row := range urlRows {
-		shortURL, err := url.JoinPath(baseURL, row.ShortCode)
-		if err != nil {
-			http.Error(w, "レスポンス情報の生成に失敗しました。再度時間をおいて試してください", http.StatusInternalServerError)
-			return
-		}
-
-		//MemoをDBに格納しているsql.NullString型から、API用のstring型に変換
-		memo := ""
-		if row.Memo.Valid {
-			memo = row.Memo.String
-		}
-
-		urlResponse := URLResponse{
-			ShortCode:   row.ShortCode,
-			ShortURL:    shortURL,
-			OriginalURL: row.OriginalUrl,
-			Memo:        memo,
-		}
-		urlResponses = append(urlResponses, urlResponse)
-	}
-
-	//レスポンスの返却
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(urlResponses); err != nil {
-		log.Println("レスポンス生成に失敗:", err)
-	}
-
-}
-
-// GET {short_code}のハンドラー関数の設定
-func handleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
-	//リクエストから、パスパラメータに設定しているshort_codeの値を取得
-	shortCode := r.PathValue("short_code")
-	//shortCodeの値についてバリデーションチェックをする
-	if shortCode == "" {
-		http.Error(w, "short_codeを入力してください", http.StatusBadRequest)
-		return
-	}
-	if len(shortCode) != 6 {
-		http.Error(w, "short_codeは6桁です、再度確認して入力してください", http.StatusBadRequest)
-		return
-	}
-	matched, err := regexp.MatchString(`^[a-zA-Z0-9]+$`, shortCode)
-	if err != nil {
-		http.Error(w, "サーバエラーが発生しました。時間をおいて試してください", http.StatusInternalServerError)
-		return
-	}
-
-	if !matched {
-		http.Error(w, "short_codeは英数字で入力してください", http.StatusBadRequest)
-		return
-	}
-
-	//sqlc生成メソッドを使用して、original_urlを取得
-	originalURL, err := queries.GetOriginURLByShortCode(r.Context(), shortCode)
-	//DBへの検索処理についてerrのハンドリングをする
-	// GetOriginURLByShortCodeから返されたDBエラーを判定する
-	if errors.Is(err, sql.ErrNoRows) {
-		//リクエストで受けとったshort_codeでの検索結果が存在しなかった
-		http.Error(w, "無効なshort_codeです", http.StatusNotFound)
-		return
-	}
-
-	if err != nil {
-		//その他のエラー
-		http.Error(w, "サーバエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
-		return
-	}
-
-	//302の返却およびLocationヘッダーにoriginalURLを設定してリダイレクトの実施
-	http.Redirect(w, r, originalURL, http.StatusFound)
-
 }
 
 func main() {
@@ -622,26 +125,26 @@ func main() {
 	//作成したRouter(つまり、mux)にhandlerを登録する
 	//Post /usersのルーティング
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
-		handleCreateUser(w, r, queries)
+		handler.HandleCreateUser(w, r, queries)
 	})
 	//Post /sessionsのルーティング
 	mux.HandleFunc("POST /sessions", func(w http.ResponseWriter, r *http.Request) {
-		handleCreateSession(w, r, queries)
+		handler.HandleCreateSession(w, r, queries)
 	})
 
 	//GET /{short_code}のルーティング
 	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
-		handleRedirect(w, r, queries)
+		handler.HandleRedirect(w, r, queries)
 	})
 
 	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls
 	// POST / urlsに関してbaseURLが必須になるので引数に追加
 	createURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handleCreateURL(w, r, queries, baseURL)
+		handler.HandleCreateURL(w, r, queries, baseURL)
 	})
 
 	listURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handleListURL(w, r, queries, baseURL)
+		handler.HandleListURL(w, r, queries, baseURL)
 	})
 
 	// authMiddleware(認証が必要なPOST /urls, GET /urls の利用のために必要)のルーティング
