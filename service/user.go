@@ -26,20 +26,18 @@ type CreateUserOutput struct {
 }
 
 // 発生するエラーを定義する。
+//Username,Passwordの必須項目チェックは共通のerrorsに切り出し
 // usernameに関するバリデーションチェックエラー
-var ErrUsernameRequired = errors.New("username is required")
+
 var ErrUsernameLength = errors.New("username length is invalid")
 
 // passwordに関するバリデーションチェックエラー
-var ErrPasswordRequired = errors.New("password is required")
+
 var ErrPasswordLength = errors.New("password length is invalid")
 var ErrPasswordForm = errors.New("password form is invalid")
 
 // passwordのハッシュ化処理に失敗
 var ErrPasswordFailedToHash = errors.New("hash to password failed")
-
-// 汎用的なDBエラー
-var ErrDB = errors.New("database operation failed")
 
 // usernameの重複登録エラー
 var ErrUsernameConflict = errors.New("username is conflict")
