@@ -79,7 +79,7 @@ func HandleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.
 	}
 	//想定外のエラーが発生した際に吸収するようのエラーハンドリング
 	if err != nil {
-		http.Error(w, "サーバ内部の処理エラーが発生しました。時間を置いて再度試してください。", http.StatusInternalServerError)
+		http.Error(w, "サーバ内部の予期せぬ処理エラーが発生しました。時間を置いて再度試してください。", http.StatusInternalServerError)
 		return
 	}
 

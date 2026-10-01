@@ -121,7 +121,7 @@ func CreateUser(ctx context.Context, queries *database.Queries, input CreateUser
 		return CreateUserOutput{}, ErrDB
 	}
 
-	//CreateUserOutputに情報を詰める
+	//すべてのチェックが通った後、CreateUserOutputに情報を詰める
 	output := CreateUserOutput{
 		UserID:    userID,
 		Username:  input.Username,
