@@ -7,11 +7,14 @@ import (
 	"errors"
 	"math/big"
 	"net/url"
+	"regexp"
 
 	"github.com/google/uuid"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/lib/pq"
 )
+
+//createURLについて
 
 // handlerから受け取る情報を構造体として定義する
 type CreateURLInput struct {
@@ -143,6 +146,7 @@ func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLIn
 	return output, nil
 }
 
+// ListURLについて
 // handlerから受け取る情報を構造体として定義する
 type ListURLInput struct {
 	UserID  uuid.UUID
@@ -205,4 +209,56 @@ func ListURL(ctx context.Context, queries *database.Queries, input ListURLInput)
 
 	return output, nil
 
+}
+
+// redirectについて
+// handlerから受け取る情報を構造体として定義する
+type RedirectInput struct {
+	ShortCode string
+}
+
+// handlerへ返却する情報を構造体として定義する
+type RedirectOutput struct {
+	OriginalURL string
+}
+
+// エラーについての定義
+// shortcodeが存在しないエラーについては、共通のerrorsにて定義
+var ErrShortCodeLength = errors.New("shortcode length is invalid")
+var ErrShortCodeForm = errors.New("shortcode form is invalid")
+var ErrShortCodeNotFound = errors.New("shortcode is not found")
+
+func ResolveRedirect(ctx context.Context, queries *database.Queries, input RedirectInput) (RedirectOutput, error) {
+	if input.ShortCode == "" {
+		return RedirectOutput{}, ErrShortCodeRequired
+	}
+
+	if len(input.ShortCode) != 6 {
+		return RedirectOutput{}, ErrShortCodeLength
+	}
+
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9]+$`, input.ShortCode)
+	if err != nil {
+		return RedirectOutput{}, err
+	}
+	if !matched {
+		return RedirectOutput{}, ErrShortCodeForm
+	}
+
+	//sqlc生成メソッドを使用して、original_urlを取得
+	originalURL, err := queries.GetOriginURLByShortCode(ctx, input.ShortCode)
+	//DBへの検索処理についてerrのハンドリングをする
+	// GetOriginURLByShortCodeから返されたDBエラーを判定する
+	if errors.Is(err, sql.ErrNoRows) {
+		return RedirectOutput{}, ErrShortCodeNotFound
+	}
+
+	if err != nil {
+		return RedirectOutput{}, ErrDB
+	}
+
+	output := RedirectOutput{
+		OriginalURL: originalURL,
+	}
+	return output, nil
 }
