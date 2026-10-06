@@ -142,3 +142,67 @@ func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLIn
 
 	return output, nil
 }
+
+// handlerから受け取る情報を構造体として定義する
+type ListURLInput struct {
+	UserID  uuid.UUID
+	BaseURL string
+}
+
+// handlerへ返却する情報を構造体として定義する(出力が複数件になるのでまとめる構造体も作成する)
+type ListURLItem struct {
+	ShortCode   string
+	ShortURL    string
+	OriginalURL string
+	Memo        string
+}
+
+type ListURLOutput struct {
+	URLs []ListURLItem
+}
+
+//エラーの定義
+//DB接続の汎用的なエラーは共通エラーを使用する
+//shortURLの作成エラーはcreateURLと共通のものを使用する
+
+// 関数内で定義する変数名の意味。item = 検索結果の1行、items = 検索結果すべて（複数行）、output = 検索結果すべてを返すための箱
+func ListURL(ctx context.Context, queries *database.Queries, input ListURLInput) (ListURLOutput, error) {
+	//ListsURLメソッドの実施（userIDに紐づくurl等情報の取得）
+	urlRows, err := queries.ListsURLByUserID(ctx, input.UserID)
+	if err != nil {
+		return ListURLOutput{}, ErrDB
+	}
+
+	//検索結果のURL情報を詰めるためのスライスの作成
+	items := []ListURLItem{}
+
+	//レスポンス情報のために、short_urlを作成
+	//BASE_URL + short_code を行い、short_urlを作成しつつ、レスポンス情報を作成する
+	for _, row := range urlRows {
+		shortURL, err := url.JoinPath(input.BaseURL, row.ShortCode)
+		if err != nil {
+			return ListURLOutput{}, ErrGenerateShortURL
+		}
+
+		//MemoをDBに格納しているsql.NullString型から、API用のstring型に変換
+		memo := ""
+		if row.Memo.Valid {
+			memo = row.Memo.String
+		}
+
+		item := ListURLItem{
+			ShortCode:   row.ShortCode,
+			ShortURL:    shortURL,
+			OriginalURL: row.OriginalUrl,
+			Memo:        memo,
+		}
+
+		items = append(items, item)
+	}
+	output := ListURLOutput{
+		URLs: items,
+	}
+
+	return output, nil
+
+}
