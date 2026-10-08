@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
-	"github.com/lib/pq"
+	"github.com/hiroki-pixel/url-shortener/repository"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -99,33 +99,31 @@ func CreateUser(ctx context.Context, queries *database.Queries, input CreateUser
 	}
 	passwordHashString := string(passwordHash)
 
-	//DBへのユーザ情報格納、CreatedAtの取得
-	insertParams := database.InsertUserParams{
+	//repositoryのcreateuser関数を呼び出してDB処理をしてもらう
+	repositoryInput := repository.CreateUserInput{
 		UserID:       userID,
 		Username:     input.Username,
 		PasswordHash: passwordHashString,
 	}
 
-	createdAt, err := queries.InsertUser(ctx, insertParams)
-
-	//InsertUserから返されたDBエラーのハンドリングをする
-	var pqErr *pq.Error
-
-	if errors.As(err, &pqErr) && pqErr.Constraint == "users_username_key" {
-		log.Println("Your username is not Unique. Failed to INSERT UserRow ")
+	repositoryOutput, err := repository.CreateUser(ctx, queries, repositoryInput)
+	if errors.Is(err, repository.ErrUsernameConflict) {
 		return CreateUserOutput{}, ErrUsernameConflict
 	}
 
-	if err != nil {
-		log.Println("Failed to INSERT UserRow")
+	if errors.Is(err, repository.ErrDB) {
 		return CreateUserOutput{}, ErrDB
 	}
 
-	//すべてのチェックが通った後、CreateUserOutputに情報を詰める
+	if err != nil {
+		return CreateUserOutput{}, ErrDB
+	}
+
+	//すべてのチェックやDBへの格納やcreatedatの受け取りが通った後、CreateUserOutputに情報を詰める
 	output := CreateUserOutput{
 		UserID:    userID,
 		Username:  input.Username,
-		CreatedAt: createdAt,
+		CreatedAt: repositoryOutput.CreatedAt,
 	}
 
 	return output, nil
