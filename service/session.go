@@ -3,11 +3,11 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"errors"
 
 	"github.com/hiroki-pixel/url-shortener/internal/database"
+	"github.com/hiroki-pixel/url-shortener/repository"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -43,17 +43,21 @@ func CreateSession(ctx context.Context, queries *database.Queries, input CreateS
 		return CreateSessionOutput{}, ErrPasswordRequired
 	}
 
-	//username検索メソッドの利用
-	getUserInfo, err := queries.GetUserByUsername(ctx, input.Username)
-	if errors.Is(err, sql.ErrNoRows) {
+	//repositoryのsession.goのFindUserByUsernameを利用して該当のusername/passwordの組み合わせが保存済みか検索
+	findUserInput := repository.FindUserByUsernameInput{
+		Username: input.Username,
+	}
+	findUserOutput, err := repository.FindUserByUsername(ctx, queries, findUserInput)
+	if errors.Is(err, repository.ErrUserNotFound) {
 		return CreateSessionOutput{}, ErrInvalidCredentials
 	}
+
 	if err != nil {
 		return CreateSessionOutput{}, ErrDB
 	}
 
 	//検索で得た、保存済みpassword_hashとリクエストで受けとったpasswordを照合する
-	err = bcrypt.CompareHashAndPassword([]byte(getUserInfo.PasswordHash), []byte(input.Password))
+	err = bcrypt.CompareHashAndPassword([]byte(findUserOutput.PasswordHash), []byte(input.Password))
 	if err != nil {
 		return CreateSessionOutput{}, ErrInvalidCredentials
 	}
@@ -68,15 +72,17 @@ func CreateSession(ctx context.Context, queries *database.Queries, input CreateS
 	//[]byte型から文字列に変換する
 	sessionID := base64.RawURLEncoding.EncodeToString(randomBytes)
 
-	//sessionsテーブルへの格納処理
-	//InsertSessionメソッドが要求する構造体InsertSessionParams型の変数を作成。
-	insertParams := database.InsertSessionParams{
+	//repositoryのsession.goのCreateSessionを使って、sessionsテーブルへの格納処理
+	createsessionInput := repository.CreateSessionInput{
 		SessionID: sessionID,
-		UserID:    getUserInfo.UserID,
+		UserID:    findUserOutput.UserID,
 	}
 
-	//sessionsテーブルへの格納処理実施
-	err = queries.InsertSession(ctx, insertParams)
+	err = repository.CreateSession(ctx, queries, createsessionInput)
+	if errors.Is(err, repository.ErrDB) {
+		return CreateSessionOutput{}, ErrDB
+	}
+
 	if err != nil {
 		return CreateSessionOutput{}, ErrDB
 	}
