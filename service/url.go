@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"errors"
 	"math/big"
 	"net/url"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
-	"github.com/lib/pq"
+	"github.com/hiroki-pixel/url-shortener/repository"
 )
 
 //createURLについて
@@ -72,13 +71,6 @@ func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLIn
 		return CreateURLOutput{}, ErrURLHost
 	}
 
-	//memoは、未入力でリクエストされた場合、NULLとして扱うようにする。
-	//入力値についてのAP側の意味やルールによる判断のため、DB側でNULLIF""を使うと暗黙知になると判断
-	memo := sql.NullString{
-		String: input.Memo,
-		Valid:  input.Memo != "",
-	}
-
 	//url_idを払い出す。
 	urlID := uuid.New()
 
@@ -114,25 +106,24 @@ func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLIn
 		return CreateURLOutput{}, ErrGenerateShortURL
 	}
 
-	//InsertURLメソッドを利用して、urlsテーブルにInsert
-	insertParams := database.InsertURLParams{
+	//repositoryのcreateURLを呼び出して、DBへ格納
+	createURLInput := repository.CreateURLInput{
 		UrlID:       urlID,
 		UserID:      input.UserID,
-		OriginalUrl: input.OriginalURL,
-		Memo:        memo,
+		OriginalURL: input.OriginalURL,
+		Memo:        input.Memo,
 		ShortCode:   shortCode,
 	}
+	err = repository.CreateURL(ctx, queries, createURLInput)
 
-	err = queries.InsertURL(ctx, insertParams)
-	//Insert時にエラー発生した際のエラーハンドリング
-	//user_id + original_url でのUNIQUE制約に引っかかった場合（Conflict）
-	// sqlcのInsertURLから返されたDBエラーを判定する
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && pqErr.Constraint == "urls_user_id_original_url_key" {
+	if errors.Is(err, repository.ErrOriginalURLDuplicate) {
 		return CreateURLOutput{}, ErrOriginalURLDuplicate
 	}
 
-	//その他のエラー(InternalServerError)
+	if errors.Is(err, repository.ErrDB) {
+		return CreateURLOutput{}, ErrDB
+	}
+
 	if err != nil {
 		return CreateURLOutput{}, ErrDB
 	}
@@ -171,38 +162,41 @@ type ListURLOutput struct {
 
 // 関数内で定義する変数名の意味。item = 検索結果の1行、items = 検索結果すべて（複数行）、output = 検索結果すべてを返すための箱
 func ListURL(ctx context.Context, queries *database.Queries, input ListURLInput) (ListURLOutput, error) {
-	//ListsURLメソッドの実施（userIDに紐づくurl等情報の取得）
-	urlRows, err := queries.ListsURLByUserID(ctx, input.UserID)
+	//repositoryのListURLByUserIDを利用
+	listURLByUserIDInput := repository.ListURLByUserIDInput{
+		UserID: input.UserID,
+	}
+
+	listURLByUserIDOutput, err := repository.ListURLByUserID(ctx, queries, listURLByUserIDInput)
+	if errors.Is(err, repository.ErrDB) {
+		return ListURLOutput{}, ErrDB
+	}
+
 	if err != nil {
 		return ListURLOutput{}, ErrDB
 	}
 
-	//検索結果のURL情報を詰めるためのスライスの作成
-	items := []ListURLItem{}
-
 	//レスポンス情報のために、short_urlを作成
 	//BASE_URL + short_code を行い、short_urlを作成しつつ、レスポンス情報を作成する
-	for _, row := range urlRows {
-		shortURL, err := url.JoinPath(input.BaseURL, row.ShortCode)
+
+	items := []ListURLItem{}
+
+	for _, repositoryItem := range listURLByUserIDOutput.URLs {
+		shortURL, err := url.JoinPath(input.BaseURL, repositoryItem.ShortCode)
 		if err != nil {
 			return ListURLOutput{}, ErrGenerateShortURL
 		}
 
-		//MemoをDBに格納しているsql.NullString型から、API用のstring型に変換
-		memo := ""
-		if row.Memo.Valid {
-			memo = row.Memo.String
-		}
-
 		item := ListURLItem{
-			ShortCode:   row.ShortCode,
+			ShortCode:   repositoryItem.ShortCode,
 			ShortURL:    shortURL,
-			OriginalURL: row.OriginalUrl,
-			Memo:        memo,
+			OriginalURL: repositoryItem.OriginalURL,
+			Memo:        repositoryItem.Memo,
 		}
 
 		items = append(items, item)
 	}
+
 	output := ListURLOutput{
 		URLs: items,
 	}
@@ -245,11 +239,14 @@ func ResolveRedirect(ctx context.Context, queries *database.Queries, input Redir
 		return RedirectOutput{}, ErrShortCodeForm
 	}
 
-	//sqlc生成メソッドを使用して、original_urlを取得
-	originalURL, err := queries.GetOriginURLByShortCode(ctx, input.ShortCode)
-	//DBへの検索処理についてerrのハンドリングをする
-	// GetOriginURLByShortCodeから返されたDBエラーを判定する
-	if errors.Is(err, sql.ErrNoRows) {
+	//repositoryのGetOriginURLByShortCodeを呼び出して、shortcodeからoriginal_urlを検索
+	getOriginalURLInput := repository.GetOriginURLByShortCodeInput{
+		ShortCode: input.ShortCode,
+	}
+
+	getOriginalURLOutput, err := repository.GetOriginURLByShortCode(ctx, queries, getOriginalURLInput)
+
+	if errors.Is(err, repository.ErrOriginalURLNotFound) {
 		return RedirectOutput{}, ErrShortCodeNotFound
 	}
 
@@ -258,7 +255,7 @@ func ResolveRedirect(ctx context.Context, queries *database.Queries, input Redir
 	}
 
 	output := RedirectOutput{
-		OriginalURL: originalURL,
+		OriginalURL: getOriginalURLOutput.OriginalURL,
 	}
 	return output, nil
 }
