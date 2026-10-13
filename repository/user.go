@@ -11,6 +11,18 @@ import (
 	"github.com/lib/pq"
 )
 
+// UserRepositoryがDBとの窓口である *database .Queriesを持つようにする
+type UserRepository struct {
+	queries *database.Queries
+}
+
+// Repositoryを作る関数を追加する
+func NewUserRepository(queries *database.Queries) *UserRepository {
+	return &UserRepository{
+		queries: queries,
+	}
+}
+
 // serviceから受け取る情報をひとまとまりに定義する。
 type CreateUserInput struct {
 	Username     string
@@ -27,7 +39,7 @@ type CreateUserOutput struct {
 // 汎用的なDBエラーについては、repository共通のerrorsにて実装
 var ErrUsernameConflict = errors.New("username is conflict")
 
-func CreateUser(ctx context.Context, queries *database.Queries, input CreateUserInput) (CreateUserOutput, error) {
+func (r *UserRepository) CreateUser(ctx context.Context, input CreateUserInput) (CreateUserOutput, error) {
 
 	//DBへのユーザ情報格納、CreatedAtの取得
 	insertParams := database.InsertUserParams{
@@ -36,7 +48,7 @@ func CreateUser(ctx context.Context, queries *database.Queries, input CreateUser
 		PasswordHash: input.PasswordHash,
 	}
 
-	createdAt, err := queries.InsertUser(ctx, insertParams)
+	createdAt, err := r.queries.InsertUser(ctx, insertParams)
 
 	//InsertUserから返されたDBエラーのハンドリングをする
 	var pqErr *pq.Error

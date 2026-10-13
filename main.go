@@ -12,6 +12,8 @@ import (
 	"github.com/hiroki-pixel/url-shortener/handler"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/internal/requestcontext"
+	"github.com/hiroki-pixel/url-shortener/repository"
+	"github.com/hiroki-pixel/url-shortener/service"
 	"github.com/joho/godotenv"
 )
 
@@ -124,8 +126,11 @@ func main() {
 
 	//作成したRouter(つまり、mux)にhandlerを登録する
 	//Post /usersのルーティング
+	//
+	userRepository := repository.NewUserRepository(queries)
+	userService := service.NewUserService(userRepository)
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleCreateUser(w, r, queries)
+		handler.HandleCreateUser(w, r, userService)
 	})
 	//Post /sessionsのルーティング
 	mux.HandleFunc("POST /sessions", func(w http.ResponseWriter, r *http.Request) {
