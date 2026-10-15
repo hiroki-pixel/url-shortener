@@ -110,7 +110,7 @@ func (s *UserService) CreateUser(ctx context.Context, input CreateUserInput) (Cr
 	}
 	passwordHashString := string(passwordHash)
 
-	//repositoryのcreateuser関数を呼び出してDB処理をしてもらう
+	//repositoryのcreateuserメソッドを呼び出してDB処理をしてもらう
 	createuserInput := repository.CreateUserInput{
 		UserID:       userID,
 		Username:     input.Username,

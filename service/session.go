@@ -6,10 +6,21 @@ import (
 	"encoding/base64"
 	"errors"
 
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/repository"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// serviceがrepositoryを持つ状態にする
+type SessionService struct {
+	repo *repository.SessionRepository
+}
+
+// serviceを作成する関数を定義する
+func NewSessionService(repo *repository.SessionRepository) *SessionService {
+	return &SessionService{
+		repo: repo,
+	}
+}
 
 // 引数を構造体としてひとまとまりに定義する。
 type CreateSessionInput struct {
@@ -31,7 +42,7 @@ var ErrInvalidCredentials = errors.New("invalid credentials")
 // session_idの払出に失敗した際のエラー
 var ErrSessionIDGeneration = errors.New("session ID generation failed")
 
-func CreateSession(ctx context.Context, queries *database.Queries, input CreateSessionInput) (CreateSessionOutput, error) {
+func (s *SessionService) CreateSession(ctx context.Context, input CreateSessionInput) (CreateSessionOutput, error) {
 	//セッション作成の中身を定義
 	//usernameのバリデーションチェック
 	if input.Username == "" {
@@ -43,11 +54,11 @@ func CreateSession(ctx context.Context, queries *database.Queries, input CreateS
 		return CreateSessionOutput{}, ErrPasswordRequired
 	}
 
-	//repositoryのsession.goのFindUserByUsernameを利用して該当のusername/passwordの組み合わせが保存済みか検索
+	//repositoryのsession.goのFindUserByUsernameメソッドを利用して該当のusername/passwordの組み合わせが保存済みか検索
 	findUserInput := repository.FindUserByUsernameInput{
 		Username: input.Username,
 	}
-	findUserOutput, err := repository.FindUserByUsername(ctx, queries, findUserInput)
+	findUserOutput, err := s.repo.FindUserByUsername(ctx, findUserInput)
 	if errors.Is(err, repository.ErrUserNotFound) {
 		return CreateSessionOutput{}, ErrInvalidCredentials
 	}
@@ -72,13 +83,13 @@ func CreateSession(ctx context.Context, queries *database.Queries, input CreateS
 	//[]byte型から文字列に変換する
 	sessionID := base64.RawURLEncoding.EncodeToString(randomBytes)
 
-	//repositoryのsession.goのCreateSessionを使って、sessionsテーブルへの格納処理
-	createsessionInput := repository.CreateSessionInput{
+	//repositoryのsession.goのCreateSessionメソッドを使って、sessionsテーブルへの格納処理
+	createSessionInput := repository.CreateSessionInput{
 		SessionID: sessionID,
 		UserID:    findUserOutput.UserID,
 	}
 
-	err = repository.CreateSession(ctx, queries, createsessionInput)
+	err = s.repo.CreateSession(ctx, createSessionInput)
 	if errors.Is(err, repository.ErrDB) {
 		return CreateSessionOutput{}, ErrDB
 	}

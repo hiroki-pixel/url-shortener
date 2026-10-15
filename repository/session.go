@@ -9,6 +9,18 @@ import (
 	"github.com/hiroki-pixel/url-shortener/internal/database"
 )
 
+// SessionRepositoryがDBとの窓口である *database .Queriesを持つようにする
+type SessionRepository struct {
+	queries *database.Queries
+}
+
+// Repositoryを作る関数を追加する
+func NewSessionRepository(queries *database.Queries) *SessionRepository {
+	return &SessionRepository{
+		queries: queries,
+	}
+}
+
 // serviceから受け取る情報をひとまとまりに定義する。(ユーザネームによる検索)
 type FindUserByUsernameInput struct {
 	Username string
@@ -23,9 +35,9 @@ type FindUserByUsernameOutput struct {
 // 発生しうるエラーを定義する（ユーザネームによる検索）
 var ErrUserNotFound = errors.New("user not found")
 
-func FindUserByUsername(ctx context.Context, queries *database.Queries, input FindUserByUsernameInput) (FindUserByUsernameOutput, error) {
+func (r *SessionRepository) FindUserByUsername(ctx context.Context, input FindUserByUsernameInput) (FindUserByUsernameOutput, error) {
 	//username検索メソッドの利用
-	getUserInfo, err := queries.GetUserByUsername(ctx, input.Username)
+	getUserInfo, err := r.queries.GetUserByUsername(ctx, input.Username)
 	if errors.Is(err, sql.ErrNoRows) {
 		return FindUserByUsernameOutput{}, ErrUserNotFound
 	}
@@ -48,7 +60,7 @@ type CreateSessionInput struct {
 
 // serviceへ返す情報をひとまとまりに定義するが、DBから帰ってくる値はないので定義不要
 
-func CreateSession(ctx context.Context, queries *database.Queries, input CreateSessionInput) error {
+func (r *SessionRepository) CreateSession(ctx context.Context, input CreateSessionInput) error {
 	//sessionsテーブルへの格納処理
 	//InsertSessionメソッドが要求する構造体InsertSessionParams型の変数を作成。
 	insertParams := database.InsertSessionParams{
@@ -57,7 +69,7 @@ func CreateSession(ctx context.Context, queries *database.Queries, input CreateS
 	}
 
 	//sessionsテーブルへの格納処理実施
-	err := queries.InsertSession(ctx, insertParams)
+	err := r.queries.InsertSession(ctx, insertParams)
 	if err != nil {
 		return ErrDB
 	}

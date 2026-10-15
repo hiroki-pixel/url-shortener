@@ -126,15 +126,17 @@ func main() {
 
 	//作成したRouter(つまり、mux)にhandlerを登録する
 	//Post /usersのルーティング
-	//
+	//依存関係の部品を順番に組み立てる
 	userRepository := repository.NewUserRepository(queries)
 	userService := service.NewUserService(userRepository)
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
 		handler.HandleCreateUser(w, r, userService)
 	})
 	//Post /sessionsのルーティング
+	sessionRepository := repository.NewSessionRepository(queries)
+	sessionService := service.NewSessionService(sessionRepository)
 	mux.HandleFunc("POST /sessions", func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleCreateSession(w, r, queries)
+		handler.HandleCreateSession(w, r, sessionService)
 	})
 
 	//GET /{short_code}のルーティング
