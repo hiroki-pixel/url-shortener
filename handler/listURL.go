@@ -6,13 +6,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/internal/requestcontext"
 	"github.com/hiroki-pixel/url-shortener/service"
 )
 
 // GET urlsのハンドラー関数の設定
-func HandleListURL(w http.ResponseWriter, r *http.Request, queries *database.Queries, baseURL string) {
+func HandleListURL(w http.ResponseWriter, r *http.Request, urlService *service.URLService, baseURL string) {
 	//認証済みリクエストのContextからuser_idを取り出す。
 	userID, ok := requestcontext.UserIDFromContext(r.Context())
 	if !ok {
@@ -25,7 +24,7 @@ func HandleListURL(w http.ResponseWriter, r *http.Request, queries *database.Que
 		BaseURL: baseURL,
 	}
 
-	output, err := service.ListURL(r.Context(), queries, input)
+	output, err := urlService.ListURL(r.Context(), input)
 
 	if errors.Is(err, service.ErrDB) {
 		http.Error(w, "サーバ内部でエラーが発生しました。時間を置いて再度試してください。", http.StatusInternalServerError)

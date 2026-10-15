@@ -140,18 +140,20 @@ func main() {
 	})
 
 	//GET /{short_code}のルーティング
+	urlRepository := repository.NewURLRepository(queries)
+	urlService := service.NewURLService(urlRepository)
 	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleRedirect(w, r, queries)
+		handler.HandleRedirect(w, r, urlService)
 	})
 
 	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls
 	// POST / urlsに関してbaseURLが必須になるので引数に追加
 	createURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleCreateURL(w, r, queries, baseURL)
+		handler.HandleCreateURL(w, r, urlService, baseURL)
 	})
 
 	listURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleListURL(w, r, queries, baseURL)
+		handler.HandleListURL(w, r, urlService, baseURL)
 	})
 
 	// authMiddleware(認証が必要なPOST /urls, GET /urls の利用のために必要)のルーティング

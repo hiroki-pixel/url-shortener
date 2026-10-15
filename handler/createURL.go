@@ -6,14 +6,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/internal/requestcontext"
 	"github.com/hiroki-pixel/url-shortener/service"
 )
 
 // POST urlsのハンドラー関数の設定。
 // short_urlの生成にBASE_URLが必要なので、main関数でbaseURLとして取得確認したものも引数にする
-func HandleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Queries, baseURL string) {
+func HandleCreateURL(w http.ResponseWriter, r *http.Request, urlService *service.URLService, baseURL string) {
 	// 認証済みリクエストのコンテキストに登録されているuserIDを取り出す
 	userID, ok := requestcontext.UserIDFromContext(r.Context())
 	if !ok {
@@ -42,7 +41,7 @@ func HandleCreateURL(w http.ResponseWriter, r *http.Request, queries *database.Q
 	}
 
 	//serviceを呼び出して、アウトプット情報を受け取る
-	output, err := service.CreateURL(r.Context(), queries, input)
+	output, err := urlService.CreateURL(r.Context(), input)
 
 	//serviceからエラー返却があった場合に、handlerにてどのようなレスポンスを実施するか振り分ける
 	if errors.Is(err, service.ErrOriginalURLRequired) {
