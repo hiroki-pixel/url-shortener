@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/hiroki-pixel/url-shortener/repository"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -22,13 +24,13 @@ func NewSessionService(repo *repository.SessionRepository) *SessionService {
 	}
 }
 
-// 引数を構造体としてひとまとまりに定義する。
+// 引数を構造体としてひとまとまりに定義する。(セッションの作成)
 type CreateSessionInput struct {
 	Username string
 	Password string
 }
 
-// 戻り値の構造体のフィールドはHandlerに渡したいsession_idのみ
+// 戻り値の構造体のフィールドはHandlerに渡したいsession_idのみ(セッションの作成)
 type CreateSessionOutput struct {
 	SessionID string
 }
@@ -104,4 +106,46 @@ func (s *SessionService) CreateSession(ctx context.Context, input CreateSessionI
 	}
 
 	return output, nil
+}
+
+// 引数を構造体として定義する(セッションの有効期限確認)
+type AuthenticateSessionInput struct {
+	SessionID string
+}
+
+// mainに渡したい返り値を構造体として定義する(セッションの有効期限確認)
+type AuthenticateSessionOutput struct {
+	UserID uuid.UUID
+}
+
+// sessionが存在しなかった際のエラー
+var ErrSessionNotFound = errors.New("session not found")
+
+// sessionの有効期限切れが起こってた際のエラー
+var ErrSessionExpired = errors.New("session is invalid")
+
+func (s *SessionService) AuthenticateSession(ctx context.Context, input AuthenticateSessionInput) (AuthenticateSessionOutput, error) {
+	//repositoryのsession.goのGetSessionByIDメソッドを呼び出し
+	authenticateSessionInput := repository.GetSessionByIDInput{
+		SessionID: input.SessionID,
+	}
+	authenticateSessionOutput, err := s.repo.GetSessionByID(ctx, authenticateSessionInput)
+	if errors.Is(err, repository.ErrSessionNotFound) {
+		return AuthenticateSessionOutput{}, ErrSessionNotFound
+	}
+
+	if err != nil {
+		return AuthenticateSessionOutput{}, ErrDB
+	}
+
+	if time.Now().After(authenticateSessionOutput.ExpiresAt) {
+		return AuthenticateSessionOutput{}, ErrSessionExpired
+	}
+
+	output := AuthenticateSessionOutput{
+		UserID: authenticateSessionOutput.UserID,
+	}
+
+	return output, nil
+
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
@@ -19,6 +20,37 @@ func NewSessionRepository(queries *database.Queries) *SessionRepository {
 	return &SessionRepository{
 		queries: queries,
 	}
+}
+
+// serviceから受け取る情報をひとまとまりに定義する。（セッションIDによるセッション情報の検索）
+type GetSessionByIDInput struct {
+	SessionID string
+}
+
+// serviceへ返す情報をひとまとまりに定義する。（セッションIDによるセッション情報の検索）
+type GetSessionByIDOutput struct {
+	UserID    uuid.UUID
+	ExpiresAt time.Time
+}
+
+// 発生しうるエラーを定義する（セッションIDによるセッション情報の検索）
+var ErrSessionNotFound = errors.New("session not found")
+
+func (r *SessionRepository) GetSessionByID(ctx context.Context, input GetSessionByIDInput) (GetSessionByIDOutput, error) {
+	//session検索メソッドの使用
+	getSession, err := r.queries.GetSessionByID(ctx, input.SessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return GetSessionByIDOutput{}, ErrSessionNotFound
+	}
+	if err != nil {
+		return GetSessionByIDOutput{}, ErrDB
+	}
+
+	output := GetSessionByIDOutput{
+		UserID:    getSession.UserID,
+		ExpiresAt: getSession.ExpiresAt,
+	}
+	return output, nil
 }
 
 // serviceから受け取る情報をひとまとまりに定義する。(ユーザネームによる検索)
