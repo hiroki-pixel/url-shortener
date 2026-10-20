@@ -10,6 +10,18 @@ import (
 	"github.com/lib/pq"
 )
 
+// URLRepositoryがDBとの窓口であるqueriesを持つようにする
+type URLRepository struct {
+	queries *database.Queries
+}
+
+// URLRepositoryを作る関数を追加する
+func NewURLRepository(queries *database.Queries) *URLRepository {
+	return &URLRepository{
+		queries: queries,
+	}
+}
+
 //serviceから受け取る情報をひとまとまりに定義する。（createURL）
 
 type CreateURLInput struct {
@@ -25,7 +37,7 @@ type CreateURLInput struct {
 // 発生する可能性のあるエラーを定義（createURL）
 var ErrOriginalURLDuplicate = errors.New("original url is duplicated")
 
-func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLInput) error {
+func (r *URLRepository) CreateURL(ctx context.Context, input CreateURLInput) error {
 	memo := sql.NullString{
 		String: input.Memo,
 		Valid:  input.Memo != "",
@@ -39,7 +51,7 @@ func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLIn
 		ShortCode:   input.ShortCode,
 	}
 
-	err := queries.InsertURL(ctx, insertParams)
+	err := r.queries.InsertURL(ctx, insertParams)
 	//Insert時にエラー発生した際のエラーハンドリング
 	//user_id + original_url でのUNIQUE制約に引っかかった場合（Conflict）
 	// sqlcのInsertURLから返されたDBエラーを判定する
@@ -71,8 +83,8 @@ type ListURLByUserIDOutput struct {
 	URLs []ListURLItem
 }
 
-func ListURLByUserID(ctx context.Context, queries *database.Queries, input ListURLByUserIDInput) (ListURLByUserIDOutput, error) {
-	urlRows, err := queries.ListsURLByUserID(ctx, input.UserID)
+func (r *URLRepository) ListURLByUserID(ctx context.Context, input ListURLByUserIDInput) (ListURLByUserIDOutput, error) {
+	urlRows, err := r.queries.ListsURLByUserID(ctx, input.UserID)
 	if err != nil {
 		return ListURLByUserIDOutput{}, ErrDB
 	}
@@ -113,8 +125,8 @@ type GetOriginURLByShortCodeOutput struct {
 // 発生する可能性のあるエラーを定義する。（GetOriginURLByShortCode）
 var ErrOriginalURLNotFound = errors.New("original url is not found")
 
-func GetOriginURLByShortCode(ctx context.Context, queries *database.Queries, input GetOriginURLByShortCodeInput) (GetOriginURLByShortCodeOutput, error) {
-	originalURL, err := queries.GetOriginURLByShortCode(ctx, input.ShortCode)
+func (r *URLRepository) GetOriginURLByShortCode(ctx context.Context, input GetOriginURLByShortCodeInput) (GetOriginURLByShortCodeOutput, error) {
+	originalURL, err := r.queries.GetOriginURLByShortCode(ctx, input.ShortCode)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return GetOriginURLByShortCodeOutput{}, ErrOriginalURLNotFound

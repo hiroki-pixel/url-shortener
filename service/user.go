@@ -7,10 +7,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/repository"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// serviceがrepositoryを持つ状態にする
+type UserService struct {
+	repo *repository.UserRepository
+}
+
+// serviceを作成する関数を定義する
+func NewUserService(repo *repository.UserRepository) *UserService {
+	return &UserService{
+		repo: repo,
+	}
+}
 
 // 引数を構造体としてひとまとまりに定義する。
 type CreateUserInput struct {
@@ -63,7 +74,7 @@ func containsAlphaAndNumber(s string) bool {
 	return false
 }
 
-func CreateUser(ctx context.Context, queries *database.Queries, input CreateUserInput) (CreateUserOutput, error) {
+func (s *UserService) CreateUser(ctx context.Context, input CreateUserInput) (CreateUserOutput, error) {
 	//サインアップ処理の中身
 	//バリデーション
 	//usernameのバリデーションチェック
@@ -99,14 +110,14 @@ func CreateUser(ctx context.Context, queries *database.Queries, input CreateUser
 	}
 	passwordHashString := string(passwordHash)
 
-	//repositoryのcreateuser関数を呼び出してDB処理をしてもらう
+	//repositoryのcreateuserメソッドを呼び出してDB処理をしてもらう
 	createuserInput := repository.CreateUserInput{
 		UserID:       userID,
 		Username:     input.Username,
 		PasswordHash: passwordHashString,
 	}
 
-	repositoryOutput, err := repository.CreateUser(ctx, queries, createuserInput)
+	repositoryOutput, err := s.repo.CreateUser(ctx, createuserInput)
 	if errors.Is(err, repository.ErrUsernameConflict) {
 		return CreateUserOutput{}, ErrUsernameConflict
 	}

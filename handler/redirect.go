@@ -4,12 +4,11 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/service"
 )
 
 // GET {short_code}のハンドラー関数の設定
-func HandleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+func HandleRedirect(w http.ResponseWriter, r *http.Request, urlService *service.URLService) {
 	//リクエストから、パスパラメータに設定しているshort_codeの値を取得
 	shortCode := r.PathValue("short_code")
 
@@ -17,7 +16,7 @@ func HandleRedirect(w http.ResponseWriter, r *http.Request, queries *database.Qu
 		ShortCode: shortCode,
 	}
 
-	output, err := service.ResolveRedirect(r.Context(), queries, input)
+	output, err := urlService.ResolveRedirect(r.Context(), input)
 
 	if errors.Is(err, service.ErrShortCodeRequired) {
 		http.Error(w, "shortcodeは必須項目です", http.StatusBadRequest)

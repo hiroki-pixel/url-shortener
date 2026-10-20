@@ -9,11 +9,20 @@ import (
 	"regexp"
 
 	"github.com/google/uuid"
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/repository"
 )
 
-//createURLについて
+// serviceがURLRepositoryを持つようにする
+type URLService struct {
+	repo *repository.URLRepository
+}
+
+// URLServiceを作成する関数を追加する
+func NewURLService(repo *repository.URLRepository) *URLService {
+	return &URLService{
+		repo: repo,
+	}
+}
 
 // handlerから受け取る情報を構造体として定義する
 type CreateURLInput struct {
@@ -41,7 +50,7 @@ var ErrURLHost = errors.New("URL Host is missing")
 var ErrGenerateShortCode = errors.New("failed to generate short code")
 var ErrGenerateShortURL = errors.New("failed to generate short URL")
 
-func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLInput) (CreateURLOutput, error) {
+func (s *URLService) CreateURL(ctx context.Context, input CreateURLInput) (CreateURLOutput, error) {
 	//OriginalURLからshortcodeの作成およびその保持処理についての中身を定義
 	//originalurlのバリデーションチェック
 	if input.OriginalURL == "" {
@@ -106,7 +115,7 @@ func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLIn
 		return CreateURLOutput{}, ErrGenerateShortURL
 	}
 
-	//repositoryのcreateURLを呼び出して、DBへ格納
+	//repositoryのcreateURLメソッドを呼び出して、DBへ格納
 	createURLInput := repository.CreateURLInput{
 		UrlID:       urlID,
 		UserID:      input.UserID,
@@ -114,7 +123,7 @@ func CreateURL(ctx context.Context, queries *database.Queries, input CreateURLIn
 		Memo:        input.Memo,
 		ShortCode:   shortCode,
 	}
-	err = repository.CreateURL(ctx, queries, createURLInput)
+	err = s.repo.CreateURL(ctx, createURLInput)
 
 	if errors.Is(err, repository.ErrOriginalURLDuplicate) {
 		return CreateURLOutput{}, ErrOriginalURLDuplicate
@@ -161,13 +170,13 @@ type ListURLOutput struct {
 //shortURLの作成エラーはcreateURLと共通のものを使用する
 
 // 関数内で定義する変数名の意味。item = 検索結果の1行、items = 検索結果すべて（複数行）、output = 検索結果すべてを返すための箱
-func ListURL(ctx context.Context, queries *database.Queries, input ListURLInput) (ListURLOutput, error) {
+func (s *URLService) ListURL(ctx context.Context, input ListURLInput) (ListURLOutput, error) {
 	//repositoryのListURLByUserIDを利用
 	listURLByUserIDInput := repository.ListURLByUserIDInput{
 		UserID: input.UserID,
 	}
 
-	listURLByUserIDOutput, err := repository.ListURLByUserID(ctx, queries, listURLByUserIDInput)
+	listURLByUserIDOutput, err := s.repo.ListURLByUserID(ctx, listURLByUserIDInput)
 	if errors.Is(err, repository.ErrDB) {
 		return ListURLOutput{}, ErrDB
 	}
@@ -222,7 +231,7 @@ var ErrShortCodeLength = errors.New("shortcode length is invalid")
 var ErrShortCodeForm = errors.New("shortcode form is invalid")
 var ErrShortCodeNotFound = errors.New("shortcode is not found")
 
-func ResolveRedirect(ctx context.Context, queries *database.Queries, input RedirectInput) (RedirectOutput, error) {
+func (s *URLService) ResolveRedirect(ctx context.Context, input RedirectInput) (RedirectOutput, error) {
 	if input.ShortCode == "" {
 		return RedirectOutput{}, ErrShortCodeRequired
 	}
@@ -244,7 +253,7 @@ func ResolveRedirect(ctx context.Context, queries *database.Queries, input Redir
 		ShortCode: input.ShortCode,
 	}
 
-	getOriginalURLOutput, err := repository.GetOriginURLByShortCode(ctx, queries, getOriginalURLInput)
+	getOriginalURLOutput, err := s.repo.GetOriginURLByShortCode(ctx, getOriginalURLInput)
 
 	if errors.Is(err, repository.ErrOriginalURLNotFound) {
 		return RedirectOutput{}, ErrShortCodeNotFound

@@ -7,11 +7,12 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/hiroki-pixel/url-shortener/handler"
 	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/internal/requestcontext"
+	"github.com/hiroki-pixel/url-shortener/repository"
+	"github.com/hiroki-pixel/url-shortener/service"
 	"github.com/joho/godotenv"
 )
 
@@ -22,7 +23,7 @@ type contextKey string
 const userIDKey contextKey = "user_id"
 
 // 認証が必要な機能で使用する、認証+目的の機能に処理を飛ばす関数
-func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
+func authMiddleware(sessionService *service.SessionService, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		//認証処理内容。ここが正常にいけば、目的の機能に飛ばすし、でなければ401や500エラーを返す。
 		//cookieの取得が実施できるかどうか
@@ -39,44 +40,48 @@ func authMiddleware(queries *database.Queries, next http.Handler) http.Handler {
 
 		sessionID := sessionCookie.Value
 
-		//sessionを取得するメソッドの使用
-		getSession, err := queries.GetSessionByID(r.Context(), sessionID)
+		//serviceのAuthenticateSessionを呼び出して、有効期限内か確認するメソッドの使用
+		input := service.AuthenticateSessionInput{
+			SessionID: sessionID,
+		}
 
-		// sqlcのGetSessionByIDから返されたDBエラーを判定する
-		if errors.Is(err, sql.ErrNoRows) {
+		output, err := sessionService.AuthenticateSession(r.Context(), input)
+
+		// serviceのAuthenticateSessionから返されたエラーごとにHTTPステータスコードとエラーメッセージを返却する
+		if errors.Is(err, service.ErrSessionNotFound) {
 			//リクエストで受けとったsessionが存在しなかった
 			http.Error(w, "認証が必要です", http.StatusUnauthorized)
 			return
 		}
-		//その他のエラーが発生していないかの確認
-		if err != nil {
+
+		if errors.Is(err, service.ErrSessionExpired) {
+			//セッションが有効期限切れ
+			http.Error(w, "認証が必要です", http.StatusUnauthorized)
+			return
+		}
+
+		if errors.Is(err, service.ErrDB) {
+			//内部DBエラー
 			http.Error(w, "DBエラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
 			return
 		}
 
-		//取得したセッションの有効期限を確認。
-		if time.Now().After(getSession.ExpiresAt) {
-			http.Error(w, "認証が必要です", http.StatusUnauthorized)
+		if err != nil {
+			//その他のエラーが発生していないかの確認
+			http.Error(w, "予期せぬ内部エラーが発生しました。時間をおいて再度試してください", http.StatusInternalServerError)
 			return
 		}
 
 		//認証が完了したので、リクエストのコンテキストにuser_idを追加
 
 		//コンテキストへの追加の実施
-		ctx := requestcontext.WithUserID(r.Context(), getSession.UserID)
+		ctx := requestcontext.WithUserID(r.Context(), output.UserID)
 
 		//作成した新たなコンテキストをリクエストに紐づける
 		r = r.WithContext(ctx)
 
 		//新しいコンテキストが紐づけられたリクエストを後続Handlerに渡す。
 		next.ServeHTTP(w, r)
-
-		/* タイムゾーントラブル分析のため一時的に追加
-		log.Printf(
-			"now=%v, expiresAt=%v",
-			time.Now(),
-			getSession.ExpiresAt,
-		)　*/
 
 	})
 }
@@ -124,32 +129,39 @@ func main() {
 
 	//作成したRouter(つまり、mux)にhandlerを登録する
 	//Post /usersのルーティング
+	//依存関係の部品を順番に組み立てる
+	userRepository := repository.NewUserRepository(queries)
+	userService := service.NewUserService(userRepository)
 	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleCreateUser(w, r, queries)
+		handler.HandleCreateUser(w, r, userService)
 	})
 	//Post /sessionsのルーティング
+	sessionRepository := repository.NewSessionRepository(queries)
+	sessionService := service.NewSessionService(sessionRepository)
 	mux.HandleFunc("POST /sessions", func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleCreateSession(w, r, queries)
+		handler.HandleCreateSession(w, r, sessionService)
 	})
 
 	//GET /{short_code}のルーティング
+	urlRepository := repository.NewURLRepository(queries)
+	urlService := service.NewURLService(urlRepository)
 	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleRedirect(w, r, queries)
+		handler.HandleRedirect(w, r, urlService)
 	})
 
 	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls
 	// POST / urlsに関してbaseURLが必須になるので引数に追加
 	createURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleCreateURL(w, r, queries, baseURL)
+		handler.HandleCreateURL(w, r, urlService, baseURL)
 	})
 
 	listURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.HandleListURL(w, r, queries, baseURL)
+		handler.HandleListURL(w, r, urlService, baseURL)
 	})
 
 	// authMiddleware(認証が必要なPOST /urls, GET /urls の利用のために必要)のルーティング
-	mux.Handle("POST /urls", authMiddleware(queries, createURLHandler))
-	mux.Handle("GET /urls", authMiddleware(queries, listURLHandler))
+	mux.Handle("POST /urls", authMiddleware(sessionService, createURLHandler))
+	mux.Handle("GET /urls", authMiddleware(sessionService, listURLHandler))
 
 	//設定したアドレスとRouterを使用してサーバを起動
 	addr := ":" + port

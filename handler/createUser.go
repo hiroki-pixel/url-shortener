@@ -8,12 +8,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/service"
 )
 
 // POST usersハンドラー関数の設定
-func HandleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+func HandleCreateUser(w http.ResponseWriter, r *http.Request, userService *service.UserService) {
 	//jsonで受けとったリクエスト情報をGoで扱えるようにDecodeする
 	type createUserRequest struct {
 		Username string `json:"username"`
@@ -35,7 +34,7 @@ func HandleCreateUser(w http.ResponseWriter, r *http.Request, queries *database.
 	}
 
 	//serviceを呼び出して、アウトプット情報を受け取る
-	output, err := service.CreateUser(r.Context(), queries, input)
+	output, err := userService.CreateUser(r.Context(), input)
 
 	//serviceからエラー返却があった場合に、handlerにてどのようなレスポンスを実施するか振り分ける
 	if errors.Is(err, service.ErrUsernameRequired) {

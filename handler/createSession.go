@@ -6,12 +6,11 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/hiroki-pixel/url-shortener/internal/database"
 	"github.com/hiroki-pixel/url-shortener/service"
 )
 
 // POST sessionsハンドラー関数の設定
-func HandleCreateSession(w http.ResponseWriter, r *http.Request, queries *database.Queries) {
+func HandleCreateSession(w http.ResponseWriter, r *http.Request, sessionService *service.SessionService) {
 	type createSessionRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -33,7 +32,7 @@ func HandleCreateSession(w http.ResponseWriter, r *http.Request, queries *databa
 	}
 
 	//serviceのCreateSessionを呼び出す
-	output, err := service.CreateSession(r.Context(), queries, input)
+	output, err := sessionService.CreateSession(r.Context(), input)
 
 	//serviceからエラー返却があった場合のハンドリングを行う
 	if errors.Is(err, service.ErrUsernameRequired) {
