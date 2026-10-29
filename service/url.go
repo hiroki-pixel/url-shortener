@@ -268,3 +268,21 @@ func (s *URLService) ResolveRedirect(ctx context.Context, input RedirectInput) (
 	}
 	return output, nil
 }
+
+// testcode学習用の関数
+func IsValidShortCode(shortCode string) bool {
+	// 文字数チェック
+	if len(shortCode) != 6 {
+		return false
+	}
+	// 英数字チェック
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9]+$`, shortCode)
+	if err != nil {
+		return false
+	}
+	if !matched {
+		return false
+	}
+	// 両方満たした場合にtrue
+	return true
+}
