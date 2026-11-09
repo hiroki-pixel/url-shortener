@@ -14,11 +14,70 @@ import (
 
 // serviceがrepositoryを持つ状態にする
 type SessionService struct {
-	repo *repository.SessionRepository
+	repo SessionRepositoryInterface
 }
 
-// serviceを作成する関数を定義する
-func NewSessionService(repo *repository.SessionRepository) *SessionService {
+// 具体のSessionRepositoryに依存しないinterfaceとして定義する
+type SessionRepositoryInterface interface {
+	GetSessionByID(
+		ctx context.Context,
+		input repository.GetSessionByIDInput,
+	) (repository.GetSessionByIDOutput, error)
+
+	FindUserByUsername(
+		ctx context.Context,
+		input repository.FindUserByUsernameInput,
+	) (repository.FindUserByUsernameOutput, error)
+
+	CreateSession(
+		ctx context.Context,
+		input repository.CreateSessionInput,
+	) error
+}
+
+// テスト用にFake Repositoryを作成する
+type FakeSessionRepository struct {
+	UserID    uuid.UUID
+	ExpiresAt time.Time
+}
+
+func (f *FakeSessionRepository) GetSessionByID(
+	ctx context.Context,
+	input repository.GetSessionByIDInput,
+) (repository.GetSessionByIDOutput, error) {
+
+	// テスト用の戻り値を記載する
+	return repository.GetSessionByIDOutput{
+		UserID:    f.UserID,
+		ExpiresAt: f.ExpiresAt,
+	}, nil
+}
+
+func (f *FakeSessionRepository) CreateSession(
+	ctx context.Context,
+	input repository.CreateSessionInput,
+) error {
+	return nil
+}
+
+func (f *FakeSessionRepository) FindUserByUsername(
+	ctx context.Context,
+	input repository.FindUserByUsernameInput,
+) (repository.FindUserByUsernameOutput, error) {
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+
+	if err != nil {
+		return repository.FindUserByUsernameOutput{}, err
+	}
+	return repository.FindUserByUsernameOutput{
+		UserID:       uuid.New(),
+		PasswordHash: string(hash),
+	}, nil
+}
+
+// serviceを作成する関数(コンストラクタ)を定義する
+func NewSessionService(repo SessionRepositoryInterface) *SessionService {
 	return &SessionService{
 		repo: repo,
 	}
