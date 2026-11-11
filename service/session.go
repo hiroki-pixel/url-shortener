@@ -39,6 +39,7 @@ type SessionRepositoryInterface interface {
 type FakeSessionRepository struct {
 	UserID    uuid.UUID
 	ExpiresAt time.Time
+	ReturnErr error
 }
 
 func (f *FakeSessionRepository) GetSessionByID(
@@ -50,7 +51,7 @@ func (f *FakeSessionRepository) GetSessionByID(
 	return repository.GetSessionByIDOutput{
 		UserID:    f.UserID,
 		ExpiresAt: f.ExpiresAt,
-	}, nil
+	}, f.ReturnErr
 }
 
 func (f *FakeSessionRepository) CreateSession(
