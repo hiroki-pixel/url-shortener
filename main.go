@@ -142,11 +142,18 @@ func main() {
 		handler.HandleCreateSession(w, r, sessionService)
 	})
 
-	//GET /{short_code}のルーティング
+	// GET /{short_code}のルーティング
 	urlRepository := repository.NewURLRepository(queries)
 	urlService := service.NewURLService(urlRepository)
 	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
 		handler.HandleRedirect(w, r, urlService)
+	})
+
+	// GET /{short_code}のテスト用ルーティング
+	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
+		// Handlerの呼び出しを書く
+		shortCode := r.PathValue("short_code")
+		fmt.Fprint(w, shortCode)
 	})
 
 	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls

@@ -1,14 +1,20 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/hiroki-pixel/url-shortener/service"
 )
 
+type RedirectServiceInterface interface {
+	// ResolveRedirect のメソッド定義を書く
+	ResolveRedirect(ctx context.Context, input service.RedirectInput) (service.RedirectOutput, error)
+}
+
 // GET {short_code}のハンドラー関数の設定
-func HandleRedirect(w http.ResponseWriter, r *http.Request, urlService *service.URLService) {
+func HandleRedirect(w http.ResponseWriter, r *http.Request, urlService RedirectServiceInterface) {
 	//リクエストから、パスパラメータに設定しているshort_codeの値を取得
 	shortCode := r.PathValue("short_code")
 
