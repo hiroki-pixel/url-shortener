@@ -86,38 +86,26 @@ func authMiddleware(sessionService *service.SessionService, next http.Handler) h
 	})
 }
 
-func main() {
-
-	//環境変数の取得確認
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error Loading .env")
-	}
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		log.Fatal("PORT is not found")
-	}
-	log.Println("PORT:", port)
+func setupApplication() (http.Handler, *sql.DB, error) {
 
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
-		log.Fatal("baseURL is not found")
+		return nil, nil, fmt.Errorf("baseURL is not found")
 	}
 
 	//DBへの接続確認
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
-		log.Fatal("DB接続先の環境変数を確認してください。")
+		return nil, nil, fmt.Errorf("DB接続先の環境変数を確認してください。")
 	}
 
 	db, err := sql.Open("postgres", dbURL)
-
 	if err != nil {
-		log.Fatal("DB Open不可")
+		return nil, nil, fmt.Errorf("DB Open不可: %w", err)
 	}
 	if err := db.Ping(); err != nil {
-		log.Fatal("DB Connect不可")
+		db.Close()
+		return nil, nil, fmt.Errorf("DB Connect不可: %w", err)
 	}
 	fmt.Println("DB接続完了")
 
@@ -149,13 +137,6 @@ func main() {
 		handler.HandleRedirect(w, r, urlService)
 	})
 
-	// GET /{short_code}のテスト用ルーティング
-	mux.HandleFunc("GET /{short_code}", func(w http.ResponseWriter, r *http.Request) {
-		// Handlerの呼び出しを書く
-		shortCode := r.PathValue("short_code")
-		fmt.Fprint(w, shortCode)
-	})
-
 	//認証後に呼びたいHandler関数の用意をする。つまり、POST /urlsとGET /urls
 	// POST / urlsに関してbaseURLが必須になるので引数に追加
 	createURLHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -170,8 +151,34 @@ func main() {
 	mux.Handle("POST /urls", authMiddleware(sessionService, createURLHandler))
 	mux.Handle("GET /urls", authMiddleware(sessionService, listURLHandler))
 
+	return mux, db, nil
+}
+
+func main() {
+	//環境変数の取得確認
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("Error Loading .env")
+		return
+	}
+
+	mux, db, err := setupApplication()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer db.Close()
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		log.Printf("環境変数のPORTを確認してください")
+		return
+	}
+	log.Println("PORT:", port)
+
 	//設定したアドレスとRouterを使用してサーバを起動
 	addr := ":" + port
-	log.Fatal(http.ListenAndServe(addr, mux))
-
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Printf("HTTPサーバ終了: %v", err)
+	}
 }
