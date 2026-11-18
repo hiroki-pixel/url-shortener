@@ -2,3 +2,6 @@
 *.exe
 .gocache/
 
+# Lambda build artifacts
+/lambda.zip
+/server
